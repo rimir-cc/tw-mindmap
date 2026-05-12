@@ -40,6 +40,16 @@ Setting both `view` and `filter` is a configuration error and renders an error b
 |`mm.label-field` |no |Tiddler field driving the visible node label. Default `title` uses the leaf-segment of the title; `caption` (or any field) decouples display from structural identity |
 |`mm.presentation` |no |Title of the currently-active presentation tiddler for this view. Empty means "no presentation". Written by the preview-pane modebar dropdown when the user picks a presentation |
 
+!! Knowledge-tree producer args
+
+|!Arg |!Default |!Purpose |
+|`area` |— |Required when `include-areas-root` is `no`. Knowledge area id (e.g. `llm`) — determines the title prefix used as the tree root |
+|`delimiter` |`/` |Path delimiter |
+|`include-areas-root` |`no` |If `yes`, build a forest of all areas under a synthetic "Knowledge" root |
+|`label-field` |`title` |Tiddler field driving the visible node label (see view fields) |
+|`focus-title` |— |Re-root the MDOM at this subtree. Composes with `slides-only` (re-root first, then prune) |
+|`slides-only` |`no` |If `yes`, prune the tree to nodes with at least one slide or with slide-bearing descendants. Surface via the toolbar toggle, not direct view-tiddler config |
+
 !! Producer module contract
 
 ```
@@ -53,7 +63,7 @@ exports.refreshFilter  = function (args) → string                // optional
 exports.describe       = function () → { name, args: [...] }    // optional
 
 // Structural editing — opt-in:
-exports.capabilities   = { structural: true, structuralOps: ["rename", "reparent", "addNode", "removeNode"] };
+exports.capabilities   = { structural: true, structuralOps: ["rename", "reparent", "addNode", "removeNode"], slides: true };
 exports.applyOps       = function (ops, args, wiki) → results[]; // mutates the wiki
 exports.titleForOp     = function (op) → string|null;            // for cascade counting
 exports.idForTitle     = function (title) → string|null;         // inverse of titleForOp; used by presentation click-to-select
@@ -63,6 +73,8 @@ exports.rootTitle      = function (args) → string|null;          // for step-o
 Producers MUST emit deterministic node IDs (prefixed with a producer-unique namespace). IDs are the join key between base and overlay.
 
 ''Structural producers'' route rename / reparent / addNode / removeNode through `applyOps`; all other ops still land in the overlay. `applyOps` results may carry `collisionResolved: true` (slug uniquified — surfaced to the user as a toast).
+
+''Slides-capable producers'' (`capabilities.slides: true`) understand the `slides-only` produce arg and prune their output tree accordingly. The widget shows the ''Slides only'' toolbar toggle only when this capability is set.
 
 !! Engine adapter contract
 
@@ -143,6 +155,7 @@ The adapter SHOULD:
 |`$:/state/rimir/mindmap/<key>/label-field` |Session override for the visible-label field |
 |`$:/state/rimir/mindmap/<key>/inspect-mode` |`body` (default), `slides`, or `presentation` — controls what the preview pane renders |
 |`$:/state/rimir/mindmap/<key>/slide-editing` |Title of the slide tiddler currently being edited inline (empty = list view) |
+|`$:/state/rimir/mindmap/<key>/slides-only` |`yes` when the canvas is pruned to slide-bearing nodes (toolbar toggle) — empty otherwise |
 |`$:/state/rimir/mindmap/<key>/preview-selected` |Currently selected node id (for the preview pane) |
 |`$:/state/rimir/mindmap/<key>/preview-edit-mode` |`yes` while the preview is in inline-edit mode |
 |`$:/state/rimir/mindmap/pending-cascade` |JSON of the deferred op + count + widget key |

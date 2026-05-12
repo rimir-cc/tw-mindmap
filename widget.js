@@ -269,6 +269,19 @@ MindmapWidget.prototype.currentLabelField = function () {
     return "title";
 };
 
+// Session-only state tiddler for the slides-only filter. When "yes", the
+// producer prunes the MDOM to nodes that have slides (or descendants with
+// slides). $:/state/ — lost on reload, intentional since it's a transient
+// view-mode rather than a durable per-view preference.
+MindmapWidget.prototype.slidesOnlyStateTitle = function () {
+    var key = this.stateAttr || this.viewAttr || this.filterAttr || "default";
+    return "$:/state/rimir/mindmap/" + key + "/slides-only";
+};
+
+MindmapWidget.prototype.currentSlidesOnly = function () {
+    return trim(this.wiki.getTiddlerText(this.slidesOnlyStateTitle(), "")) === "yes";
+};
+
 // Session-only state tiddler for the right-pane inspect mode.
 //   "body"         -> existing body view/edit (default)
 //   "slides"       -> slide list + per-slide editor (Phase 1)
@@ -337,6 +350,7 @@ MindmapWidget.prototype.effectiveProducerArgs = function () {
     if (focusTitle) { args["focus-title"] = focusTitle; }
     var labelField = this.currentLabelField();
     if (labelField && labelField !== "title") { args["label-field"] = labelField; }
+    if (this.currentSlidesOnly()) { args["slides-only"] = "yes"; }
     return args;
 };
 
@@ -1109,6 +1123,16 @@ MindmapWidget.prototype.refresh = function (changedTiddlers) {
         this.forwardPreviewRefresh(changedTiddlers);
         return true;
     }
+    // Slides-only toggle: re-produce so the producer applies / un-applies
+    // its pruning pass. Pressed-state of the toolbar button updates here too.
+    if (changedTiddlers[this.slidesOnlyStateTitle()]) {
+        try { this.reproduce(); } catch (e) {
+            console.error("[$mindmap] slides-only re-produce failed", e);
+        }
+        this.updateSlidesOnlyButton();
+        this.forwardPreviewRefresh(changedTiddlers);
+        return true;
+    }
     // Inspect-mode switch: keep the JS-built modebar dropdown in sync and
     // update pane visibility (presentation mode shows pane even without a
     // selection). The wikitext content branch reads the state reactively so
@@ -1163,6 +1187,25 @@ MindmapWidget.prototype.renderToolbar = function () {
     this.titleModeWarning.className = "rr-mindmap-title-warning";
     this.titleModeWarning.textContent = "⚠ Title-mode — drag-rename rewrites tiddler titles and cascades references across the wiki.";
     this.toolbarNode.appendChild(this.titleModeWarning);
+
+    // Slides-only filter toggle. Visible only when the producer advertises
+    // `capabilities.slides` (currently knowledge-tree). When pressed, the
+    // canvas shows only the spine of nodes that have at least one slide or
+    // descend into a slide-bearing subtree.
+    var producerForSlides = findProducerByName(this.producerName);
+    if (producerForSlides && producerForSlides.capabilities && producerForSlides.capabilities.slides) {
+        this.slidesOnlyBtn = this.document.createElement("button");
+        this.slidesOnlyBtn.type = "button";
+        this.slidesOnlyBtn.className = "rr-mindmap-slides-only-btn";
+        this.slidesOnlyBtn.textContent = "Slides only";
+        this.slidesOnlyBtn.title = "Show only nodes with slides (or descendants that have slides)";
+        var slidesOnlySelf = this;
+        this.slidesOnlyBtn.addEventListener("click", function () {
+            slidesOnlySelf.toggleSlidesOnly();
+        });
+        this.toolbarNode.appendChild(this.slidesOnlyBtn);
+        this.updateSlidesOnlyButton();
+    }
 
     this.orphanBadge = this.document.createElement("button");
     this.orphanBadge.type = "button";
@@ -1399,6 +1442,26 @@ MindmapWidget.prototype.handleStepOut = function () {
         title: this.focusStateTitle(),
         text: ""
     }));
+};
+
+// Flip the slides-only state. refresh() picks up the change via the
+// slidesOnlyStateTitle branch and re-runs produce().
+MindmapWidget.prototype.toggleSlidesOnly = function () {
+    var on = this.currentSlidesOnly();
+    this.wiki.addTiddler(new $tw.Tiddler({
+        title: this.slidesOnlyStateTitle(),
+        text: on ? "" : "yes"
+    }));
+};
+
+// Reflect the slides-only state in the toolbar button's pressed class and
+// label. Called from renderToolbar (initial render) and refresh() when the
+// state tiddler changes.
+MindmapWidget.prototype.updateSlidesOnlyButton = function () {
+    if (!this.slidesOnlyBtn) { return; }
+    var on = this.currentSlidesOnly();
+    this.slidesOnlyBtn.classList.toggle("rr-mindmap-slides-only-btn-active", on);
+    this.slidesOnlyBtn.setAttribute("aria-pressed", on ? "true" : "false");
 };
 
 // Handler for the rr-mindmap-add-slide custom message dispatched from the

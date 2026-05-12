@@ -135,6 +135,33 @@ type: text/vnd.tiddlywiki
     font-family: var(--theme-monospace-font, monospace);
 }
 
+/* Slides-only filter toggle button. Compact chip styled to fit alongside
+   the monospace producer/engine labels; flips to a pressed accent when
+   active, mirroring the canvas pruning. */
+.rr-mindmap-slides-only-btn {
+    background: transparent;
+    border: 1px solid <<colour tiddler-border>>;
+    border-radius: 3px;
+    padding: 1px 8px;
+    font: inherit;
+    font-size: 0.85em;
+    cursor: pointer;
+    color: inherit;
+}
+.rr-mindmap-slides-only-btn:hover {
+    background: <<colour message-background>>;
+}
+.rr-mindmap-slides-only-btn-active {
+    background: <<colour primary>>;
+    color: <<colour background>>;
+    border-color: <<colour primary>>;
+}
+.rr-mindmap-slides-only-btn-active:hover {
+    background: <<colour primary>>;
+    color: <<colour background>>;
+    opacity: 0.9;
+}
+
 /* Cascade-confirm modal. Self-contained: defines its own page-darkening +
    centering layer (does NOT rely on kn-modal-overlay cascade) so a missing
    knowledge-app stylesheet or a CSS load-order race can't leave the card

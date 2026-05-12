@@ -144,6 +144,112 @@ describe("mindmap-knowledge-tree-apply", function () {
         });
     });
 
+    describe("produce — slides-only pruning (v0.2.8+)", function () {
+        // Collect all tiddler-bearing node titles in an MDOM for assertions.
+        function tiddlerTitles(mdom) {
+            var titles = [];
+            function walk(node) {
+                if (node.attrs && node.attrs["core:tiddler"]) {
+                    titles.push(node.attrs["core:tiddler"]);
+                }
+                (node.children || []).forEach(walk);
+            }
+            walk(mdom.root);
+            return titles;
+        }
+
+        it("does nothing without the slides-only arg (regression guard)", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/foo", "kn.type": "note" },
+                { title: "knowledge/llm/bar", "kn.type": "note" }
+            ]));
+            // Neither foo nor bar has slides — they should still appear without
+            // the arg.
+            var mdom = producer.produce({ area: "llm" }, wiki);
+            var titles = tiddlerTitles(mdom);
+            expect(titles).toContain("knowledge/llm/foo");
+            expect(titles).toContain("knowledge/llm/bar");
+        });
+
+        it("prunes branches whose entire subtree has no slides", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/foo", "kn.type": "note" },
+                { title: "knowledge/llm/foo/slides/slide-1",
+                  "kn.type": "slide",
+                  tags: "$:/tags/rimir/mindmap/slide" },
+                { title: "knowledge/llm/bar", "kn.type": "note" },
+                { title: "knowledge/llm/baz", "kn.type": "note" }
+            ]));
+            // Wire foo's mm.slide-order so getSlideTitles sees the slide.
+            wiki.addTiddler(new $tw.Tiddler(
+                wiki.getTiddler("knowledge/llm/foo"),
+                { "mm.slide-order": "knowledge/llm/foo/slides/slide-1" }
+            ));
+            var mdom = producer.produce({ area: "llm", "slides-only": "yes" }, wiki);
+            var titles = tiddlerTitles(mdom);
+            expect(titles).toContain("knowledge/llm/foo");
+            expect(titles).not.toContain("knowledge/llm/bar");
+            expect(titles).not.toContain("knowledge/llm/baz");
+            expect(mdom.root.attrs["mm:slides-only"]).toBe(true);
+        });
+
+        it("keeps a node when only a descendant has slides", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/foo", "kn.type": "note" },
+                { title: "knowledge/llm/foo/bar", "kn.type": "note" },
+                { title: "knowledge/llm/foo/bar/slides/slide-1",
+                  "kn.type": "slide",
+                  tags: "$:/tags/rimir/mindmap/slide" }
+            ]));
+            wiki.addTiddler(new $tw.Tiddler(
+                wiki.getTiddler("knowledge/llm/foo/bar"),
+                { "mm.slide-order": "knowledge/llm/foo/bar/slides/slide-1" }
+            ));
+            var titles = tiddlerTitles(producer.produce(
+                { area: "llm", "slides-only": "yes" }, wiki));
+            // Both ancestor and descendant must survive the prune.
+            expect(titles).toContain("knowledge/llm/foo");
+            expect(titles).toContain("knowledge/llm/foo/bar");
+        });
+
+        it("stamps mm:has-slides on nodes that own slides directly", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/foo", "kn.type": "note" },
+                { title: "knowledge/llm/foo/slides/slide-1",
+                  "kn.type": "slide",
+                  tags: "$:/tags/rimir/mindmap/slide" }
+            ]));
+            wiki.addTiddler(new $tw.Tiddler(
+                wiki.getTiddler("knowledge/llm/foo"),
+                { "mm.slide-order": "knowledge/llm/foo/slides/slide-1" }
+            ));
+            var mdom = producer.produce(
+                { area: "llm", "slides-only": "yes" }, wiki);
+            // Find the foo node.
+            var fooNode = null;
+            function walk(node) {
+                if (node.attrs && node.attrs["core:tiddler"] === "knowledge/llm/foo") {
+                    fooNode = node;
+                }
+                (node.children || []).forEach(walk);
+            }
+            walk(mdom.root);
+            expect(fooNode).toBeTruthy();
+            expect(fooNode.attrs["mm:has-slides"]).toBe(true);
+        });
+
+        it("preserves the root even when no slides exist anywhere", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/foo", "kn.type": "note" }
+            ]));
+            var mdom = producer.produce(
+                { area: "llm", "slides-only": "yes" }, wiki);
+            // Root survives; foo is pruned away (no slides anywhere).
+            expect(mdom.root).toBeTruthy();
+            expect(tiddlerTitles(mdom)).not.toContain("knowledge/llm/foo");
+        });
+    });
+
     describe("rename", function () {
         it("renames a leaf tiddler with the sanitised slug", function () {
             var wiki = setupWiki(areaSeed().concat([

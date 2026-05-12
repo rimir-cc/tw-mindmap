@@ -27,6 +27,7 @@ Node IDs are prefixed "kt:". Tiddler-bearing nodes get attrs:
 
 var filterTree = require("$:/plugins/rimir/mindmap/producers/filter-tree.js");
 var sanitizeLib = require("$:/plugins/rimir/mindmap/lib/sanitize-title.js");
+var slideTiddlers = require("$:/plugins/rimir/mindmap/lib/slide-tiddlers.js");
 
 var PRODUCER_NAME = "knowledge-tree";
 var ID_PREFIX = "kt:";
@@ -142,6 +143,34 @@ function enrich(node, opts) {
     for (var i = 0; i < children.length; i++) { enrich(children[i], childOpts); }
 }
 
+// Slides-only pruning: walk the tree bottom-up; keep a node iff it has slides
+// of its own OR any of its descendants (after pruning) is kept. Synthetic
+// nodes never have slides directly — they only survive if a descendant does.
+// The root is ALWAYS preserved so the engine has something to render even
+// when no slides exist anywhere; the widget shows an empty canvas in that
+// case rather than throwing.
+function pruneToSlideBearing(node, wiki) {
+    if (!node) { return false; }
+    var children = node.children || [];
+    var keptChildren = [];
+    for (var i = 0; i < children.length; i++) {
+        if (pruneToSlideBearing(children[i], wiki)) {
+            keptChildren.push(children[i]);
+        }
+    }
+    node.children = keptChildren;
+    var sourceTitle = node.attrs && node.attrs["core:tiddler"];
+    var hasOwnSlides = false;
+    if (sourceTitle) {
+        hasOwnSlides = slideTiddlers.getSlideTitles(wiki, sourceTitle).length > 0;
+    }
+    if (hasOwnSlides) {
+        node.attrs = node.attrs || {};
+        node.attrs["mm:has-slides"] = true;
+    }
+    return hasOwnSlides || keptChildren.length > 0;
+}
+
 // Rewrite each tiddler-bearing node's `label` to the value of `labelField`.
 // Fallback rules:
 //   labelField === "caption" and field is empty → keep the title-segment
@@ -179,7 +208,8 @@ exports.describe = function () {
             { key: "area",      required: true,  description: "Knowledge area id (e.g. 'llm'). Determines the title prefix used as the tree root." },
             { key: "delimiter", default: "/",    description: "Path delimiter (default '/')" },
             { key: "include-areas-root", default: "no", description: "If 'yes', render a forest of all areas. The `area` arg is ignored." },
-            { key: "label-field", default: "title", description: "Tiddler field used as the visible node label. 'title' (default) uses the leaf path-segment; 'caption' (or any other field) decouples display from the structural identity — rename only edits the chosen field, title is preserved." }
+            { key: "label-field", default: "title", description: "Tiddler field used as the visible node label. 'title' (default) uses the leaf path-segment; 'caption' (or any other field) decouples display from the structural identity — rename only edits the chosen field, title is preserved." },
+            { key: "slides-only", default: "no", description: "If 'yes', the tree is pruned to nodes that have at least one slide OR have a descendant with slides — i.e. the presentation-eligible spine of the area. Composes with focus mode (re-rooting happens first, then pruning)." }
         ]
     };
 };
@@ -215,14 +245,27 @@ exports.produce = function (args, wiki) {
                 relabelTree(rootChildren[fri], forestLabelField, wiki);
             }
         }
+        var forestRoot = {
+            id: ID_PREFIX + "__knowledge__",
+            label: "Knowledge",
+            children: rootChildren,
+            attrs: { "core:synthetic": true }
+        };
+        // Slides-only mode: prune every area subtree, then drop area roots that
+        // have no slides remaining (forest root itself always survives).
+        if (args["slides-only"] === "yes" || args["slides-only"] === true) {
+            var keptAreas = [];
+            for (var pi = 0; pi < forestRoot.children.length; pi++) {
+                if (pruneToSlideBearing(forestRoot.children[pi], wiki)) {
+                    keptAreas.push(forestRoot.children[pi]);
+                }
+            }
+            forestRoot.children = keptAreas;
+            forestRoot.attrs["mm:slides-only"] = true;
+        }
         return {
             version: 1,
-            root: {
-                id: ID_PREFIX + "__knowledge__",
-                label: "Knowledge",
-                children: rootChildren,
-                attrs: { "core:synthetic": true }
-            },
+            root: forestRoot,
             meta: { producer: PRODUCER_NAME, producedAt: Date.now() }
         };
     }
@@ -296,6 +339,15 @@ exports.produce = function (args, wiki) {
     if (labelField && labelField !== "title") {
         relabelTree(root, labelField, wiki);
     }
+    // Slides-only mode: prune subtrees whose entire hierarchy has zero
+    // slides. The root itself is always kept (even if empty) so the engine
+    // has something to render — the canvas shows just the area label with
+    // no children rather than throwing.
+    if (args["slides-only"] === "yes" || args["slides-only"] === true) {
+        pruneToSlideBearing(root, wiki);
+        root.attrs = root.attrs || {};
+        root.attrs["mm:slides-only"] = true;
+    }
 
     return {
         version: 1,
@@ -320,7 +372,10 @@ exports.produce = function (args, wiki) {
 
 exports.capabilities = {
     structural: true,
-    structuralOps: ["rename", "reparent", "removeNode", "addNode"]
+    structuralOps: ["rename", "reparent", "removeNode", "addNode"],
+    // Producer understands the `slides-only` arg — widget exposes the
+    // toolbar toggle conditionally on this capability.
+    slides: true
 };
 
 // Config tiddler titles read by applyOps. Defaults shipped as plugin

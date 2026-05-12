@@ -183,7 +183,22 @@ Three things were orthogonal at v0.2.3 — structural source (producer), visible
 
 * `[<owner>mm-slides[]]` — ordered slide titles.
 * `[<owner>mm-slide-count[]]` — count.
-* `[<owner>mm-has-slides[]]` — `yes` / `no`. Used by the (Phase 3B) slides-only view to prune nodes without slides.
+* `[<owner>mm-has-slides[]]` — `yes` / `no`. Used by the slides-only view to prune nodes without slides.
+
+!!! Slides-only view
+
+A toolbar toggle hides every node that has no slides anywhere in its subtree. Implementation:
+
+* Producer capability flag `capabilities.slides = true` — the widget only renders the toolbar button when the active producer advertises slides support (`knowledge-tree` is currently the only one).
+* Session state: `$:/state/rimir/mindmap/<key>/slides-only` (`yes` / empty). $:/state/ means it doesn't sync — the choice is a transient view mode, not a durable preference.
+* The widget merges `slides-only=yes` into `effectiveProducerArgs()` and watches the state tiddler in `refresh()`. A toggle triggers `reproduce()` — the producer re-runs and applies its pruning pass.
+* Pruning is bottom-up: walk the tree, drop a node iff it has no slides AND no kept descendant. Synthetic root is always preserved (engine gets something to render even when no slides exist anywhere).
+* Pruning stamps `mm:has-slides = true` on every node that owns slides directly — engines can style those distinctly (highlight, badge, ...).
+* Composes with focus mode: focus re-roots first, then the prune trims the focused subtree. Composes with label-field: relabel runs before prune, so visible labels stay consistent regardless of mode.
+
+''Refresh strategy:''
+
+The producer's `refreshFilter` still excludes slide tiddlers (so a slide-body keystroke doesn't trigger a reproduce). The owner's `mm.slide-order` IS watched — adding or removing a slide via the slide pane writes to that field on the owner, which is in the watched set, which triggers a reproduce. The edge case "manually delete the slide tiddler without scrubbing `mm.slide-order`" leaves a stale visibility decision until the next reproduce — `getSlideTitles` filters out missing entries defensively so the canvas isn't broken, just stale.
 
 !!! Named presentations
 
