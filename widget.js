@@ -242,17 +242,46 @@ MindmapWidget.prototype.currentFocusTitle = function () {
     return trim(this.wiki.getTiddlerText(this.focusStateTitle(), ""));
 };
 
+// Session override for the visible-label field. Empty means "use the view's
+// mm.label-field, or 'title' if unset". Lives in $:/state/ so it doesn't
+// sync — pick-on-the-fly per browser session.
+MindmapWidget.prototype.labelFieldStateTitle = function () {
+    var key = this.stateAttr || this.viewAttr || this.filterAttr || "default";
+    return "$:/state/rimir/mindmap/" + key + "/label-field";
+};
+
+MindmapWidget.prototype.currentLabelField = function () {
+    var session = trim(this.wiki.getTiddlerText(this.labelFieldStateTitle(), ""));
+    if (session) { return session; }
+    if (this.viewAttr) {
+        var view = this.wiki.getTiddler(this.viewAttr);
+        var viewField = view && trim(view.fields["mm.label-field"] || "");
+        if (viewField) { return viewField; }
+    }
+    return "title";
+};
+
+// Compose the full args set passed to producer.produce() AND
+// producer.applyOps. Includes the session-driven focus + label-field so
+// structural mutations know which surface they're editing.
+MindmapWidget.prototype.effectiveProducerArgs = function () {
+    var args = Object.assign({}, this.producerArgs);
+    var focusTitle = this.currentFocusTitle();
+    if (focusTitle) { args["focus-title"] = focusTitle; }
+    var labelField = this.currentLabelField();
+    if (labelField && labelField !== "title") { args["label-field"] = labelField; }
+    return args;
+};
+
 MindmapWidget.prototype.produceBase = function () {
     var producer = findProducerByName(this.producerName);
     if (!producer || typeof producer.produce !== "function") {
         throw new Error("Unknown producer: " + this.producerName);
     }
-    // Merge session focus into producer args. Done at produce-time so the
-    // focus state can change without a refreshSelf — refresh() detects the
-    // focus state tiddler in changedTiddlers and calls reproduce().
-    var effectiveArgs = Object.assign({}, this.producerArgs);
-    var focusTitle = this.currentFocusTitle();
-    if (focusTitle) { effectiveArgs["focus-title"] = focusTitle; }
+    // Merge session focus + label-field into producer args. Done at
+    // produce-time so the state can change without a refreshSelf — refresh()
+    // detects the state tiddlers in changedTiddlers and calls reproduce().
+    var effectiveArgs = this.effectiveProducerArgs();
     var mdom = producer.produce(effectiveArgs, this.wiki, this);
     if (!mdom || !mdom.root) {
         throw new Error("Producer " + this.producerName + " returned invalid MDOM");
@@ -329,7 +358,8 @@ MindmapWidget.prototype.handleEngineOp = function (op) {
     var producer = findProducerByName(this.producerName);
     var routing = router.routeOp(op, producer, {
         wiki: this.wiki,
-        cascadeThreshold: this.cascadeThreshold()
+        cascadeThreshold: this.cascadeThreshold(),
+        args: this.effectiveProducerArgs()
     });
     switch (routing.mode) {
         case "structural":
@@ -528,7 +558,7 @@ MindmapWidget.prototype.maybeApplyPendingCascade = function () {
         if (this.engineInstance && typeof this.engineInstance.setSuspendOps === "function") {
             this.engineInstance.setSuspendOps(true);
         }
-        producer.applyOps([op], this.producerArgs, this.wiki);
+        producer.applyOps([op], this.effectiveProducerArgs(), this.wiki);
     } catch (e) {
         console.error("[$mindmap] cascade apply failed", e);
     } finally {
@@ -542,6 +572,60 @@ MindmapWidget.prototype.maybeApplyPendingCascade = function () {
     // Clear the state tiddlers (modal closes via $reveal when pending empties).
     this.wiki.addTiddler(new $tw.Tiddler({ title: CASCADE_PENDING_TIDDLER, text: "" }));
     this.wiki.addTiddler(new $tw.Tiddler({ title: CASCADE_APPLY_TIDDLER, text: "" }));
+};
+
+// Fire a transient TW notification for a resolved slug collision so the
+// user notices the auto-uniquify suffix (-2, -3, ...). The notification
+// tiddler reads `wanted`, `got`, `parent` from paramObject.
+MindmapWidget.prototype.notifySlugCollision = function (result) {
+    if (!result || !result.collisionResolved) { return; }
+    var got = result.newTitle ? leafSegmentOf(result.newTitle) : "";
+    this.dispatchEvent({
+        type: "tm-notify",
+        param: "$:/plugins/rimir/mindmap/notifications/slug-collision",
+        paramObject: {
+            wanted: result.wanted || "",
+            got: got,
+            parent: result.parent || ""
+        }
+    });
+};
+
+function leafSegmentOf(title) {
+    if (!title) { return ""; }
+    var i = title.lastIndexOf("/");
+    return i < 0 ? title : title.substring(i + 1);
+}
+
+// When the view tiddler's mm.producer changes mid-life, the live overlay
+// almost certainly contains ops keyed by the OLD producer's id encoding
+// (e.g. `kt:knowledge/llm/foo` from knowledge-tree). Re-applying those to
+// a new producer's MDOM either silently no-ops or corrupts state. Move
+// them aside to a sibling `<overlay>/archive-<ts>` tiddler — preserves
+// the user's work, lets them recover by hand, but stops the new producer
+// from inheriting stale ops. The live overlay tiddler is cleared so the
+// store starts fresh on the next produce cycle.
+MindmapWidget.prototype.archiveOverlayIfProducerChanged = function () {
+    if (!this.viewAttr || !this.overlayTitle) { return; }
+    var view = this.wiki.getTiddler(this.viewAttr);
+    if (!view) { return; }
+    var newProducer = trim(view.fields["mm.producer"] || "");
+    if (!newProducer || newProducer === this.producerName) { return; }
+    var liveTiddler = this.wiki.getTiddler(this.overlayTitle);
+    if (!liveTiddler) { return; }
+    var liveText = trim(liveTiddler.fields.text || "");
+    if (!liveText || liveText === "[]") { return; } // nothing to preserve
+    var archiveTitle = this.overlayTitle + "/archive-" + Date.now();
+    // Preserve all fields so type/tags etc. survive — only retitle + carry
+    // over a couple of breadcrumb fields so the user can identify what it was.
+    this.wiki.addTiddler(new $tw.Tiddler(liveTiddler, {
+        title: archiveTitle,
+        "mm.archived-from-producer": this.producerName,
+        "mm.archived-at": "" + new Date().toISOString()
+    }));
+    // Empty the live overlay (don't delete — a missing tiddler would
+    // reincarnate from a server-side source on next sync).
+    this.wiki.addTiddler(new $tw.Tiddler(liveTiddler, { text: "" }));
 };
 
 // Read the cascade-confirm threshold from config; falls back to the router's
@@ -569,13 +653,13 @@ MindmapWidget.prototype.applyStructuralOp = function (op, producer) {
         if (this.engineInstance && typeof this.engineInstance.setSuspendOps === "function") {
             this.engineInstance.setSuspendOps(true);
         }
-        var results = producer.applyOps([op], this.producerArgs, this.wiki);
+        var results = producer.applyOps([op], this.effectiveProducerArgs(), this.wiki);
         for (var i = 0; i < results.length; i++) {
             var r = results[i];
             if (r && r.error) {
                 console.error("[$mindmap] applyOps error", r);
-            } else if (r && r.collisionResolved) {
-                console.info("[$mindmap] slug collision resolved →", r.newTitle);
+            } else if (r && r.collisionResolved && r.newTitle) {
+                this.notifySlugCollision(r);
             }
         }
         // Schedule refresh: the wiki change events will trigger refresh()
@@ -654,6 +738,12 @@ MindmapWidget.prototype.refresh = function (changedTiddlers) {
         }
     }
     if (this.viewAttr && changedTiddlers[this.viewAttr]) {
+        // Detect mm.producer switch before tearing down. Overlay ops from
+        // the OLD producer reference ids in its encoding (kt:..., ft:..., ...);
+        // re-applying them to a NEW producer's MDOM would corrupt or no-op
+        // silently. Move the live overlay aside so the new producer starts
+        // clean, but keep the old ops as an /archive-<ts> tiddler.
+        this.archiveOverlayIfProducerChanged();
         this.refreshSelf();
         return true;
     }
@@ -664,6 +754,20 @@ MindmapWidget.prototype.refresh = function (changedTiddlers) {
             console.error("[$mindmap] focus re-produce failed", e);
         }
         this.updateActionsVisibility();
+        return true;
+    }
+    // Label-field switch: re-run the producer so every node's `label`
+    // reflects the newly-chosen field (or the title fallback). The view-
+    // tiddler change (handled above) already triggers a refreshSelf, so we
+    // only need to react to the session-state override here.
+    if (changedTiddlers[this.labelFieldStateTitle()]) {
+        try { this.reproduce(); } catch (e) {
+            console.error("[$mindmap] label-field re-produce failed", e);
+        }
+        if (this.labelFieldSelect) {
+            this.labelFieldSelect.value = this.currentLabelField();
+        }
+        this.applyLabelFieldClasses();
         return true;
     }
     if (baseChanged) {
@@ -698,9 +802,19 @@ MindmapWidget.prototype.renderToolbar = function () {
     engineLabel.textContent = "engine: " + this.engineName;
     this.toolbarNode.appendChild(engineLabel);
 
-    this.orphanBadge = this.document.createElement("span");
+    // Title-mode warning banner. Always in the DOM; CSS reveals it only
+    // when the container carries the .rr-mindmap-title-active class.
+    this.titleModeWarning = this.document.createElement("span");
+    this.titleModeWarning.className = "rr-mindmap-title-warning";
+    this.titleModeWarning.textContent = "⚠ Title-mode — drag-rename rewrites tiddler titles and cascades references across the wiki.";
+    this.toolbarNode.appendChild(this.titleModeWarning);
+
+    this.orphanBadge = this.document.createElement("button");
+    this.orphanBadge.type = "button";
     this.orphanBadge.className = "rr-mindmap-orphan-badge";
     this.orphanBadge.style.display = "none";
+    var orphanSelf = this;
+    this.orphanBadge.addEventListener("click", function () { orphanSelf.pruneOrphans(); });
     this.toolbarNode.appendChild(this.orphanBadge);
 
     this.containerNode.appendChild(this.toolbarNode);
@@ -758,10 +872,69 @@ MindmapWidget.prototype.renderToolbar = function () {
         this.actionsPanel.appendChild(editBtn);
         this.editBtn = editBtn;
 
+        // Label-field selector — chooses which tiddler field drives the
+        // visible label. Options come from $:/config/rimir/mindmap/label-
+        // fields (newline-separated; default: "title\ncaption"). The picked
+        // value is written to a $:/state/ tiddler so it's session-scoped.
+        var labelFieldSelect = this.document.createElement("select");
+        labelFieldSelect.className = "rr-mindmap-label-field-select";
+        labelFieldSelect.title = "Field used as the visible node label";
+        var options = this.labelFieldOptions();
+        var currentField = this.currentLabelField();
+        for (var li = 0; li < options.length; li++) {
+            var opt = this.document.createElement("option");
+            opt.value = options[li];
+            opt.textContent = options[li];
+            if (options[li] === currentField) { opt.selected = true; }
+            labelFieldSelect.appendChild(opt);
+        }
+        labelFieldSelect.addEventListener("change", function () {
+            self.wiki.addTiddler(new $tw.Tiddler({
+                title: self.labelFieldStateTitle(),
+                text: labelFieldSelect.value
+            }));
+            // Apply immediate visual cue — refresh() will catch up but the
+            // user expects feedback the instant they pick from the dropdown.
+            self.applyLabelFieldClasses();
+        });
+        this.actionsPanel.appendChild(labelFieldSelect);
+        this.labelFieldSelect = labelFieldSelect;
+
         // The step-out state is independent of selection — update it once
         // at render time. handleSelect updates the others on selection change.
         this.updateActionsVisibility();
+        this.applyLabelFieldClasses();
     }
+};
+
+// Visual cue for title-mode on a structural view: tints the canvas with a
+// soft warning wash so the user knows drag-rename will mutate filesystem
+// titles (and references will cascade via flibbles/relink). Caption / other
+// label-fields keep the neutral canvas — only the chosen field changes.
+MindmapWidget.prototype.applyLabelFieldClasses = function () {
+    if (!this.containerNode) { return; }
+    var producer = findProducerByName(this.producerName);
+    var isStructural = !!(producer && producer.capabilities && producer.capabilities.structural);
+    var titleMode = (this.currentLabelField() === "title");
+    var cl = this.containerNode.classList;
+    if (isStructural && titleMode) { cl.add("rr-mindmap-title-active"); }
+    else { cl.remove("rr-mindmap-title-active"); }
+};
+
+// Read the list of pickable label fields. Newline-separated list (default
+// "title\ncaption"). Returns an array, with "title" guaranteed to be present
+// even when the user mis-configures.
+MindmapWidget.prototype.labelFieldOptions = function () {
+    var raw = this.wiki.getTiddlerText("$:/config/rimir/mindmap/label-fields", "title\ncaption");
+    var fields = [];
+    var seen = Object.create(null);
+    var lines = (raw || "").split("\n");
+    for (var i = 0; i < lines.length; i++) {
+        var f = trim(lines[i]);
+        if (f && !seen[f]) { fields.push(f); seen[f] = true; }
+    }
+    if (!seen.title) { fields.unshift("title"); }
+    return fields;
 };
 
 // Compute which buttons should be visible right now and apply.
@@ -794,9 +967,9 @@ MindmapWidget.prototype.updateActionsVisibility = function () {
     // dual affordance is the point of having two buttons.
     if (this.stepUpBtn) { this.stepUpBtn.style.display = currentFocus ? "" : "none"; }
     if (this.stepOutBtn) { this.stepOutBtn.style.display = currentFocus ? "" : "none"; }
-    // Panel itself: visible when any child button is.
-    var anyVisible = selectedTitle || currentFocus;
-    this.actionsPanel.style.display = anyVisible ? "" : "none";
+    // Panel itself stays visible — the label-field selector is global UI
+    // that should always be reachable, not gated on a selection.
+    this.actionsPanel.style.display = "";
 };
 
 // Step out one level — walk the focus title up one path segment. If the
@@ -871,11 +1044,33 @@ MindmapWidget.prototype.updateToolbar = function () {
     var n = (this.lastOrphans || []).length;
     if (n > 0) {
         this.orphanBadge.textContent = "⚠ " + n + " orphan op" + (n === 1 ? "" : "s");
-        this.orphanBadge.title = "Overlay ops whose target id is missing from the current base. Edit the overlay tiddler manually or use the prune action to clear them.";
+        this.orphanBadge.title = "Overlay ops whose target id is missing from the current base — typically left over from a tiddler rename or reparent. Click to prune (irreversible).";
         this.orphanBadge.style.display = "";
     } else {
         this.orphanBadge.style.display = "none";
     }
+};
+
+// Drop the orphan ops from the overlay store. Indices recorded by compose
+// point into the original op list; we filter by index instead of by
+// reference so dup-prone deserialised ops are removed exactly once.
+MindmapWidget.prototype.pruneOrphans = function () {
+    if (!this.store || !this.lastOrphans || !this.lastOrphans.length) { return; }
+    var n = this.lastOrphans.length;
+    var ok = $tw.utils.confirm
+        ? $tw.utils.confirm("Discard " + n + " orphan op" + (n === 1 ? "" : "s") + "? Cannot be undone.")
+        : window.confirm("Discard " + n + " orphan op" + (n === 1 ? "" : "s") + "? Cannot be undone.");
+    if (!ok) { return; }
+    var drop = Object.create(null);
+    for (var i = 0; i < this.lastOrphans.length; i++) { drop[this.lastOrphans[i].index] = true; }
+    var ops = this.store.read();
+    var kept = [];
+    for (var j = 0; j < ops.length; j++) { if (!drop[j]) { kept.push(ops[j]); } }
+    this.store.replace(kept);
+    this.store.flush();
+    // recompose + redraw immediately; refresh() on the overlay change will
+    // happen too but flushing makes the toolbar count update without lag.
+    this.recompose();
 };
 
 MindmapWidget.prototype.renderError = function () {

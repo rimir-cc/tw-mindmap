@@ -68,15 +68,70 @@ The overlay is an ''ordered op log'' (JSON array in the overlay tiddler's text f
 
 Ops whose target id is absent from the current base are returned in the composer's `orphans` array. The widget surfaces a count in its toolbar; the user prunes them manually rather than silently losing work after upstream renames.
 
+!! Structural editing (write-back to real tiddlers)
+
+A producer can opt into ''write-back mode'' — turning the mindmap into an authoring surface for the underlying wiki, not just a display layer. The `knowledge-tree` producer is the canonical implementation.
+
+!!! Producer interface
+
+```
+exports.capabilities = {
+    structural: true,
+    structuralOps: ["rename", "reparent", "addNode", "removeNode"]
+};
+exports.applyOps = function (ops, args, wiki) { ... }
+exports.titleForOp = function (op) { ... }   // id → wiki title (for cascade counting)
+exports.rootTitle = function (args) { ... }  // natural area-level root title (for step-out)
+```
+
+`structuralOps` is a whitelist — `setAttr`, `reorder`, `hide` stay visual-only even on structural producers, because collapse / sibling-order is canvas chrome that belongs in the per-view overlay.
+
+!!! Per-op routing
+
+`structural-ops.js → routeOp(op, producer, options) → { mode, count? }`. Modes:
+
+|!Mode |!Caller does |
+|`structural` |`producer.applyOps([op], args, wiki)` — mutates the wiki |
+|`overlay` |`store.append(op)` — visual-only |
+|`deferred` |Stash op in `$:/state/rimir/mindmap/pending-cascade`, pop confirm modal |
+|`drop` |Silently discard (malformed op) |
+
+The routing decision is per-op, not per-producer. Even on a `knowledge-tree` view, collapsing a branch goes overlay; only rename/reparent/addNode/removeNode mutate tiddlers.
+
+!!! Cascade-confirm threshold
+
+When an op would rename or delete more than `$:/config/rimir/mindmap/structural/cascade-threshold` (default 10) descendant tiddlers, `routeOp` returns `deferred`. The widget writes the pending op to a global state tiddler; a modal renders from it; on Confirm the widget bypasses the threshold check and applies directly.
+
+Rename in label-field mode (see below) skips the cascade check entirely — only one field on one tiddler is touched.
+
+!! Focus mode
+
+A view tiddler can declare `mm.focus` (or the widget can take `focus=`); the session-level override lives at `$:/state/rimir/mindmap/<key>/focus-title`. When set, the producer re-roots its MDOM at the focused subtree. The actions panel exposes ↓ focus-in / ↑ step-out-one / ⇪ step-out-fully buttons; step-out walks the focus title up one path segment and clears focus when it reaches the producer's natural `rootTitle()`.
+
+The focus title is a structural identity (a tiddler title), so it survives renames via flibbles/relink — the producer reads it fresh on every produce.
+
+!! Label-field configurability
+
+By default each node's visible `label` is the leaf segment of the underlying tiddler's title. A view can set `mm.label-field` (or the session-state override `$:/state/rimir/mindmap/<key>/label-field`) to any other field — typically `caption` — to decouple display from structural identity. The actions panel includes a `<select>` populated from `$:/config/rimir/mindmap/label-fields` (default `title\ncaption`).
+
+In non-title label-field mode:
+* Producer relabels each tiddler-bearing node from the chosen field. Empty `caption` falls back to leaf segment (stamped `mm:label-derived="title"`); other empty fields render as `UNDEFINED` (stamped `mm:label-status="undefined"`).
+* `applyOps.rename` writes the typed value to the chosen field — title is preserved, no cascade.
+* `applyOps.addNode` derives the title slug from the sanitized typed value AND also stamps the typed (unsanitized) label on the chosen field of the new tiddler.
+* `applyOps.reparent` still cascades structurally — only the //label// is decoupled.
+
 !! Refresh model
 
-The widget reacts to three signals:
+The widget reacts to several signals:
 
 # ''Base data change'' — `refreshFilter` (returned by the producer) is evaluated; if any changed tiddler is in the result, the producer re-projects.
 # ''Overlay tiddler change'' — recompose from cached base, hand to `engine.update(mdom)`.
-# ''User gesture'' — engine emits an `Op` via `on("op", fn)`; widget appends to overlay store (debounced 250 ms).
+# ''Focus state change'' — reproduce (subtree re-root).
+# ''Label-field state change'' — reproduce (new labels).
+# ''View tiddler change'' — if `mm.producer` changed, the existing overlay is moved aside to `<overlay>/archive-<ts>` so stale ops can't leak into a new producer's MDOM; then `refreshSelf`.
+# ''User gesture'' — engine emits an `Op` via `on("op", fn)`; widget routes via `routeOp` (structural / overlay / deferred).
 
-v1 advertises `capabilities.applyOps = false` for the mind-elixir adapter; the widget always calls `update(mdom)` after a recompose. Per-op transitions are a v2 optimisation.
+The mind-elixir adapter advertises `capabilities.applyOps = false` — the widget always hands it a full composite MDOM via `update(mdom)` after a recompose. Per-op transitions in the adapter are a future optimisation.
 
 !! Engine selection precedence
 
@@ -88,8 +143,7 @@ v1 advertises `capabilities.applyOps = false` for the mind-elixir adapter; the w
 !! What this is NOT
 
 * ''A graph engine.'' Use `flibbles/graph` + `cytoscape-engine` for general-purpose graphs.
-* ''An editor.'' v1 is display + overlay-based restructuring. Free-form node creation/editing inside the canvas may be added later when an engine declares `capabilities.edit = true`.
-* ''A slide player.'' v2.
+* ''A slide player.'' Planned — the overlay op vocabulary is forward-compatible (a slide is a named overlay or a layered chain of overlays).
 
 </$fill>
 </$transclude>

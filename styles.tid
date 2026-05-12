@@ -12,6 +12,40 @@ type: text/vnd.tiddlywiki
     flex-direction: column;
 }
 
+/* Warning wash applied when a structural view is in title-label mode —
+   drag-rename + drag-reparent mutate filesystem titles (and cascade refs
+   via flibbles/relink). Switching the label-field dropdown to caption or
+   any other field clears the wash. The canvas tint can't paint over mind-
+   elixir's own background, so we frame it instead with a red inset shadow
+   that's clearly visible above the engine's drawing. */
+.rr-mindmap-title-active {
+    background-color: #fff0f0;
+}
+.rr-mindmap-title-active .rr-mindmap-canvas {
+    box-shadow: inset 0 0 0 3px #f88;
+}
+.rr-mindmap-title-active .rr-mindmap-toolbar {
+    background-color: #fee;
+    border-top: 3px solid #f88;
+    border-bottom: 1px solid #f88;
+}
+/* Preview pane keeps a neutral background — it's a tiddler-editor surface,
+   not the destructive canvas. Override the container's red wash. */
+.rr-mindmap-title-active .rr-mindmap-preview {
+    background-color: <<colour tiddler-background>>;
+}
+
+.rr-mindmap-title-warning {
+    display: none;
+    margin-left: 0.6em;
+    color: #a00;
+    font-weight: bold;
+    flex: 1 1 auto;
+}
+.rr-mindmap-title-active .rr-mindmap-title-warning {
+    display: inline;
+}
+
 /* Horizontal layout under the toolbar: canvas on the left, preview pane
    (when a node is selected) on the right. */
 .rr-mindmap-main {
@@ -167,10 +201,32 @@ type: text/vnd.tiddlywiki
     cursor: not-allowed;
 }
 
+.rr-mindmap-label-field-select {
+    height: 24px;
+    padding: 0 4px;
+    font-size: 0.85em;
+    line-height: 1;
+    border: 1px solid <<colour tiddler-border>>;
+    background: <<colour tiddler-background>>;
+    color: inherit;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
 .rr-mindmap-orphan-badge {
     margin-left: auto;
-    color: var(--theme-message-warning-color, #b06000);
-    cursor: help;
+    color: <<colour message-foreground>>;
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 1px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85em;
+}
+.rr-mindmap-orphan-badge:hover {
+    background: <<colour message-background>>;
+    border-color: <<colour tiddler-border>>;
 }
 
 .rr-mindmap-error {

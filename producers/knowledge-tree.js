@@ -138,6 +138,34 @@ function enrich(node, opts) {
     for (var i = 0; i < children.length; i++) { enrich(children[i], childOpts); }
 }
 
+// Rewrite each tiddler-bearing node's `label` to the value of `labelField`.
+// Fallback rules:
+//   labelField === "caption" and field is empty → keep the title-segment
+//     label (the natural identity) and stamp `mm:label-derived = "title"`
+//     so UI can style it muted.
+//   any other field empty → label becomes "UNDEFINED" + stamp
+//     `mm:label-status = "undefined"`. Engines can render that distinctly.
+function relabelTree(node, labelField, wiki) {
+    if (!node) { return; }
+    var sourceTitle = node.attrs && node.attrs["core:tiddler"];
+    if (sourceTitle) {
+        var tiddler = wiki.getTiddler(sourceTitle);
+        var raw = tiddler ? trim(tiddler.fields[labelField] || "") : "";
+        if (raw) {
+            node.label = raw;
+        } else if (labelField === "caption") {
+            node.attrs = node.attrs || {};
+            node.attrs["mm:label-derived"] = "title";
+        } else {
+            node.label = "UNDEFINED";
+            node.attrs = node.attrs || {};
+            node.attrs["mm:label-status"] = "undefined";
+        }
+    }
+    var children = node.children || [];
+    for (var i = 0; i < children.length; i++) { relabelTree(children[i], labelField, wiki); }
+}
+
 exports.name = PRODUCER_NAME;
 
 exports.describe = function () {
@@ -146,7 +174,8 @@ exports.describe = function () {
         args: [
             { key: "area",      required: true,  description: "Knowledge area id (e.g. 'llm'). Determines the title prefix used as the tree root." },
             { key: "delimiter", default: "/",    description: "Path delimiter (default '/')" },
-            { key: "include-areas-root", default: "no", description: "If 'yes', render a forest of all areas. The `area` arg is ignored." }
+            { key: "include-areas-root", default: "no", description: "If 'yes', render a forest of all areas. The `area` arg is ignored." },
+            { key: "label-field", default: "title", description: "Tiddler field used as the visible node label. 'title' (default) uses the leaf path-segment; 'caption' (or any other field) decouples display from the structural identity — rename only edits the chosen field, title is preserved." }
         ]
     };
 };
@@ -175,6 +204,12 @@ exports.produce = function (args, wiki) {
             areaRoot.attrs = areaRoot.attrs || {};
             if (area.icon) { areaRoot.attrs["core:icon"] = area.icon; }
             rootChildren.push(areaRoot);
+        }
+        var forestLabelField = trim(args["label-field"] || "");
+        if (forestLabelField && forestLabelField !== "title") {
+            for (var fri = 0; fri < rootChildren.length; fri++) {
+                relabelTree(rootChildren[fri], forestLabelField, wiki);
+            }
         }
         return {
             version: 1,
@@ -249,6 +284,13 @@ exports.produce = function (args, wiki) {
     if (areaMeta && areaMeta.description) { root.attrs["core:description"] = areaMeta.description; }
     if (focusTitle && rootTitle !== areaPrefix) {
         root.attrs["mm:focused"] = focusTitle;
+    }
+    // Optional re-labeling: when the view picks a non-title field (e.g.
+    // caption) as the visible label, rewrite each tiddler-bearing node's
+    // label from that field. Title stays the structural identity.
+    var labelField = trim(args["label-field"] || "");
+    if (labelField && labelField !== "title") {
+        relabelTree(root, labelField, wiki);
     }
 
     return {
@@ -369,9 +411,23 @@ function renameOrReparent(wiki, oldTitle, newTitle) {
     return { changed: true, oldTitle: oldTitle, newTitle: newTitle };
 }
 
-function applyRename(op, wiki) {
+function applyRename(op, wiki, args) {
     var oldTitle = titleFromId(op.id);
     if (!oldTitle) { return { skipped: "no-source-title", op: op }; }
+    // Label-field mode: rename only mutates the chosen field. Title (=
+    // structural identity) is left alone, so descendants don't cascade and
+    // references stay intact. Used when `mm.label-field` is e.g. `caption`.
+    var labelField = trim((args && args["label-field"]) || "");
+    if (labelField && labelField !== "title") {
+        var tiddler = wiki.getTiddler(oldTitle);
+        if (!tiddler) { return { skipped: "tiddler-missing", op: op }; }
+        var newValue = trim(op.label || "");
+        var newFields = {};
+        newFields[labelField] = newValue;
+        wiki.addTiddler(new $tw.Tiddler(tiddler, newFields, wiki.getModificationFields()));
+        return { changed: true, op: op, field: labelField, value: newValue };
+    }
+    // Title-mode (default): rewrite the leaf segment and cascade.
     var parent = parentTitle(oldTitle);
     if (!parent) { return { skipped: "no-parent-context", op: op }; }
     var slug = sanitizeLib.sanitize(op.label);
@@ -381,6 +437,8 @@ function applyRename(op, wiki) {
     var newTitle = parent + "/" + finalSlug;
     var result = renameOrReparent(wiki, oldTitle, newTitle);
     result.collisionResolved = (finalSlug !== slug);
+    result.wanted = slug;
+    result.parent = parent;
     return result;
 }
 
@@ -404,10 +462,12 @@ function applyReparent(op, wiki) {
     if (newTitle === oldTitle) { return { changed: false, op: op }; }
     var result = renameOrReparent(wiki, oldTitle, newTitle);
     result.collisionResolved = (finalLeaf !== leaf);
+    result.wanted = leaf;
+    result.parent = newParent;
     return result;
 }
 
-function applyAddNode(op, wiki) {
+function applyAddNode(op, wiki, args) {
     var parentTitle = titleFromId(op.parent);
     if (!parentTitle) { return { skipped: "no-parent-title", op: op }; }
     var rawLabel = op.node && op.node.label;
@@ -428,13 +488,22 @@ function applyAddNode(op, wiki) {
         tags: "$:/tags/rimir/knowledge-app/note",
         text: ""
     };
+    // Label-field mode: also stash the typed (unsanitized) label on the
+    // chosen field so the node's visible name matches what the user typed,
+    // not the sanitized title-segment.
+    var labelField = trim((args && args["label-field"]) || "");
+    if (labelField && labelField !== "title") {
+        fields[labelField] = trim(rawLabel || "");
+    }
     wiki.addTiddler(new $tw.Tiddler(wiki.getCreationFields(), fields, wiki.getModificationFields()));
     return {
         changed: true,
         op: op,
         newTitle: newTitle,
         knType: knType,
-        collisionResolved: (finalSlug !== slug)
+        collisionResolved: (finalSlug !== slug),
+        wanted: slug,
+        parent: parentTitle
     };
 }
 
@@ -460,10 +529,10 @@ exports.applyOps = function (ops, args, wiki) {
         var op = ops[i];
         try {
             switch (op.op) {
-                case "rename":     results.push(applyRename(op, wiki)); break;
+                case "rename":     results.push(applyRename(op, wiki, args)); break;
                 case "reparent":   results.push(applyReparent(op, wiki)); break;
                 case "removeNode": results.push(applyRemoveNode(op, wiki)); break;
-                case "addNode":    results.push(applyAddNode(op, wiki)); break;
+                case "addNode":    results.push(applyAddNode(op, wiki, args)); break;
                 default: results.push({ skipped: "unsupported-op", op: op });
             }
         } catch (e) {

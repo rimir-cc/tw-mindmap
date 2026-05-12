@@ -1,0 +1,4 @@
+title: $:/plugins/rimir/mindmap/notifications/slug-collision
+type: text/vnd.tiddlywiki
+
+Slug collision resolved: ''<$text text=<<wanted>>/>'' was already taken under ''<$text text=<<parent>>/>''. Renamed to ''<$text text=<<got>>/>''.

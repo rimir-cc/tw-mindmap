@@ -24,11 +24,21 @@ Three reasons:
 
 !! What happens if a tiddler is renamed?
 
-The producer re-projects with the new title, so the old node id disappears from the base. Overlay ops targeting the old id become ''orphans'' — they remain in the overlay tiddler (your gestures are not silently destroyed) and the widget toolbar shows a count. You can manually edit the overlay JSON or use the `mm.id-aliases` view field to map old id → new id.
+The producer re-projects with the new title, so the old node id disappears from the base. Overlay ops targeting the old id become ''orphans'' — they remain in the overlay tiddler (your gestures are not silently destroyed) and the widget toolbar shows a count badge.
+
+The badge is clickable: click it → confirm dialog → orphan ops are pruned from the overlay tiddler. You can also manually edit the overlay JSON or use the `mm.id-aliases` view field to map old id → new id.
 
 !! Can a producer write back to TW data?
 
-Producers are read-only by contract. If you want a write-capable view, expose actions on the host tiddler (via `onSelectActions=`) and let the user trigger them. The widget itself never writes to producer output.
+Yes — opt-in. A producer that declares `capabilities.structural: true` and a `structuralOps` whitelist takes mutation through its own `applyOps(ops, args, wiki)`. The widget routes each user-emitted op individually: rename/reparent/addNode/removeNode mutate wiki tiddlers; everything else (collapse, sibling order, custom attrs) still lives in the per-view overlay. The `knowledge-tree` producer is the canonical example — it translates drag-rename / drag-reparent into `wiki.renameTiddler` so flibbles/relink cascades references.
+
+!! Will my drag-rename change my tiddler titles?
+
+Depends on the visible-label mode. The actions panel has a small dropdown:
+* ''title'' (default) — yes, rename rewrites the leaf segment of the tiddler title and cascades references via flibbles/relink-titles. The widget makes this mode visually obvious: a soft red wash on the toolbar, a 3px red frame around the canvas, and a bold banner in the toolbar reading "⚠ Title-mode — drag-rename rewrites tiddler titles and cascades references across the wiki."
+* ''caption'' (or any other field) — no, rename only writes to the chosen field. Title is preserved, references untouched. The visual warning disappears.
+
+This is the structural-vs-visual decoupling: keep titles as stable path-segment identities (good for backlinks, addressing, references) and put the human-friendly label in `caption` (or wherever you like).
 
 !! Why not use `json-dsl` for producers?
 
@@ -37,6 +47,16 @@ Producers are read-only by contract. If you want a write-capable view, expose ac
 !! What if my engine doesn't support a feature like cross-links?
 
 Set `capabilities.applyOps = false` (or omit specific capabilities) and the widget falls back to engine-agnostic behaviour. Unknown attrs in the namespace bag are preserved on round-trip but not visualised — switching to a more capable engine reveals them without data loss.
+
+!! What happens if I switch `mm.producer` on a view that already has overlay ops?
+
+The widget detects the change before tearing down, archives the live overlay to `<overlay-title>/archive-<timestamp>` (preserving all fields, plus stamps `mm.archived-from-producer` and `mm.archived-at`), and clears the live overlay. The new producer starts fresh — its MDOM uses a different id encoding, so the old ops would silently no-op against it anyway. The archive is a regular tiddler you can inspect and copy ops back out of if needed.
+
+!! Operation affected too many descendants — what's the threshold?
+
+`$:/config/rimir/mindmap/structural/cascade-threshold`, default 10. Above that, rename / reparent / removeNode pops a confirm modal showing the count. Confirm applies the op via `applyOps`; Cancel discards. Set the threshold to a very high number to disable confirmation entirely.
+
+Note: rename in label-field mode (caption etc.) skips the threshold check — it only writes one field on one tiddler.
 
 !! Will there be a visual editor for view tiddlers?
 

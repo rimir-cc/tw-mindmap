@@ -79,7 +79,12 @@ exports.routeOp = function (op, producer, options) {
     }
 
     // Structural path. For ops with cascade potential, gate on threshold.
-    if (wiki && (op.op === "rename" || op.op === "reparent" || op.op === "removeNode")) {
+    // Rename in non-title label-field mode is a single-field write — no
+    // cascade, no descendants touched — so the threshold check is skipped.
+    var labelField = options.args && options.args["label-field"];
+    var renameTouchesTitleOnly = (op.op === "rename" && labelField && labelField !== "title");
+    if (wiki && !renameTouchesTitleOnly &&
+            (op.op === "rename" || op.op === "reparent" || op.op === "removeNode")) {
         var n = countAffectedDescendants(op, producer, wiki);
         if (n > threshold) {
             return { mode: "deferred", reason: "cascade-threshold", count: n };

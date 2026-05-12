@@ -81,6 +81,30 @@ Create two view tiddlers pointing at the same producer/args but different overla
 
 Each persists its own positions, hides and reparenting independently.
 
+!! Structural editing on knowledge-app data
+
+The `knowledge-tree` producer turns the mindmap into an authoring surface over `rimir/knowledge-app`'s `knowledge/<area>/...` title tree. Create a view tiddler:
+
+```
+title: Mindmap/llm
+mm.producer: knowledge-tree
+mm.args: {"area": "llm"}
+mm.engine: MindElixir
+mm.overlay: Mindmap/llm/overlay
+mm.label-field: caption
+```
+
+Then render with `<$mindmap view="Mindmap/llm"/>`. With `mm.label-field: caption`, drag-rename writes only the tiddler's `caption` field — titles stay stable, references stay intact. Without it, drag-rename rewrites the leaf-segment of the title and flibbles/relink-titles cascades.
+
+The bottom-right floating panel offers:
+* ↓ — focus into the selected node's subtree
+* ↑ — step out one level
+* ⇪ — step out fully to the area root
+* ✎ — open the selected tiddler in a modal edit-popup (or F2)
+* `<select>` — switch the visible-label field (title / caption / any field listed in `$:/config/rimir/mindmap/label-fields`)
+
+Reparent a node with >10 descendants: a confirm modal asks before applying. Threshold is configurable.
+
 !! Verification checklist
 
 After installing both `rimir/mindmap` and a working engine adapter:
@@ -89,6 +113,8 @@ After installing both `rimir/mindmap` and a working engine adapter:
 # Drag a node to a new parent in the canvas; reload the wiki; the node remains in the new position (overlay persisted).
 # Rename a source tiddler in the wiki; the orphan badge appears in the widget toolbar showing the count.
 # Switch `$:/config/rimir/mindmap/default-engine` between two installed engines; round-trip preserves `mx:*` attrs even when an unrelated engine renders in between.
+# On a `knowledge-tree` view, drag-rename a node; verify the tiddler title changed (or — in label-field mode — that only the chosen field changed).
+# Reparent a node whose subtree has more than `cascade-threshold` (default 10) descendants; verify the confirm modal appears with the correct count.
 
 </$fill>
 </$transclude>

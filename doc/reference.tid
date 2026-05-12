@@ -36,6 +36,8 @@ Setting both `view` and `filter` is a configuration error and renders an error b
 |`mm.engine` |no |Engine name override |
 |`mm.options` |no (JSON object) |Engine-specific options |
 |`mm.id-aliases` |no (JSON object) |Old-id → new-id rescue map applied before composition |
+|`mm.focus` |no |Initial focus title — re-roots the MDOM at that subtree on first render |
+|`mm.label-field` |no |Tiddler field driving the visible node label. Default `title` uses the leaf-segment of the title; `caption` (or any field) decouples display from structural identity |
 
 !! Producer module contract
 
@@ -48,9 +50,17 @@ exports.name           = "foo";
 exports.produce        = function (args, wiki, widget) → MDOM;   // required
 exports.refreshFilter  = function (args) → string                // optional
 exports.describe       = function () → { name, args: [...] }    // optional
+
+// Structural editing — opt-in:
+exports.capabilities   = { structural: true, structuralOps: ["rename", "reparent", "addNode", "removeNode"] };
+exports.applyOps       = function (ops, args, wiki) → results[]; // mutates the wiki
+exports.titleForOp     = function (op) → string|null;            // for cascade counting
+exports.rootTitle      = function (args) → string|null;          // for step-out detection
 ```
 
 Producers MUST emit deterministic node IDs (prefixed with a producer-unique namespace). IDs are the join key between base and overlay.
+
+''Structural producers'' route rename / reparent / addNode / removeNode through `applyOps`; all other ops still land in the overlay. `applyOps` results may carry `collisionResolved: true` (slug uniquified — surfaced to the user as a toast).
 
 !! Engine adapter contract
 
@@ -102,8 +112,24 @@ The adapter SHOULD:
 
 !! Config tiddlers
 
+|!Tiddler |!Default |!Purpose |
+|`$:/config/rimir/mindmap/default-engine` |(first registered) |Fallback engine name when widget and view don't specify |
+|`$:/config/rimir/mindmap/structural/new-node-type-strategy` |`fixed:note` |`fixed:<type>` or `derive-from-parent`. Chooses `kn.type` of nodes created via `+child` / `+sibling` |
+|`$:/config/rimir/mindmap/structural/new-node-type-default` |`note` |Fallback type when `derive-from-parent` finds no parent type |
+|`$:/config/rimir/mindmap/structural/cascade-threshold` |`10` |Rename/reparent/delete affecting more than this many descendants pops a confirm modal |
+|`$:/config/rimir/mindmap/label-fields` |`title\ncaption` |Newline-separated list of tiddler fields shown in the actions-panel label-field dropdown |
+
+!! Session state tiddlers
+
 |!Tiddler |!Purpose |
-|`$:/config/rimir/mindmap/default-engine` |Fallback engine name when widget and view don't specify |
+|`$:/state/rimir/mindmap/<key>/focus-title` |Currently focused subtree (session-only — `$:/state/` doesn't sync) |
+|`$:/state/rimir/mindmap/<key>/label-field` |Session override for the visible-label field |
+|`$:/state/rimir/mindmap/<key>/preview-selected` |Currently selected node id (for the preview pane) |
+|`$:/state/rimir/mindmap/<key>/preview-edit-mode` |`yes` while the preview is in inline-edit mode |
+|`$:/state/rimir/mindmap/pending-cascade` |JSON of the deferred op + count + widget key |
+|`$:/state/rimir/mindmap/pending-cascade-apply` |`yes` when the user confirms the deferred op |
+
+`<key>` is the widget's `state=` attribute, else its `view=` / `filter=` value, else `default`. Multiple `$mindmap` widgets sharing a key share state — useful for embedded toolbars, harmful for embedded copies of the same view.
 
 </$fill>
 </$transclude>

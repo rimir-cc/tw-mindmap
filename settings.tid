@@ -65,6 +65,25 @@ Reparent / delete / rename operations whose effect spans more than this many des
 ''Current value:''
 <$edit-text tiddler="$:/config/rimir/mindmap/structural/cascade-threshold" tag="input" type="number" default="10"/>
 
+!!! Visible-label field
+
+The bottom-right actions panel includes a small dropdown that picks the tiddler field used as the visible node label. Picking `title` keeps the current behaviour: node names follow the leaf-segment of the title (drag-rename renames the tiddler, references cascade via `flibbles/relink-titles`). Picking any other field — typically `caption` — decouples //display// from //structural identity//:
+
+* drag-rename writes the typed value to the chosen field; the title is preserved (no cascade).
+* `+child` / `+sibling` still derives a sanitized title slug from the typed value, AND stamps the typed value on the chosen field of the new tiddler.
+* reparent still cascades structurally (titles change, references update) — only the label source is decoupled.
+* empty field on the source tiddler falls back to the leaf segment (`caption` mode, marked `mm:label-derived`) or to the literal `UNDEFINED` (any other field, marked `mm:label-status`).
+
+The list of pickable fields is taken from this config tiddler, one field per line:
+
+|!Tiddler |`$:/config/rimir/mindmap/label-fields` |
+|!Default |`title`<br/>`caption` |
+
+''Current value:''
+<$edit-text tiddler="$:/config/rimir/mindmap/label-fields" tag="textarea" default={{{ [[title]] +[addsuffix[\n]addsuffix[caption]] }}} placeholder="title&#10;caption&#10;kn.caption"/>
+
+The choice is stored in `$:/state/rimir/mindmap/<key>/label-field` (session-scoped — lost on reload). A view tiddler can set `mm.label-field` for a stable per-view default.
+
 !! Overlay tiddler titles and persistence
 
 Drag/rename/collapse changes are stored in the overlay tiddler named by the view's `mm.overlay` field (or the `overlay=` widget attribute). For changes to survive browser reloads and server restarts, that title MUST be //synced to the server// — that is, it MUST match the wiki's `$:/config/SyncFilter`.

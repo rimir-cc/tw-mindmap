@@ -258,4 +258,83 @@ describe("mindmap-knowledge-tree-apply", function () {
             expect(results[0].skipped).toBe("no-parent-title");
         });
     });
+
+    // Landing C-prime — configurable visible-label field. In non-title mode
+    // rename writes only to the chosen field; addNode also stamps it.
+    describe("label-field mode", function () {
+        it("rename writes to the chosen field, leaving the title alone", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/foo", text: "body", caption: "Old" }
+            ]));
+            var results = producer.applyOps([
+                { op: "rename", id: "kt:knowledge/llm/foo", label: "Brand new label" }
+            ], { "label-field": "caption" }, wiki);
+            expect(results[0].changed).toBe(true);
+            expect(results[0].field).toBe("caption");
+            expect(results[0].value).toBe("Brand new label");
+            // Title unchanged — structural identity preserved.
+            expect(wiki.getTiddler("knowledge/llm/foo")).toBeTruthy();
+            expect(wiki.getTiddler("knowledge/llm/foo").fields.caption).toBe("Brand new label");
+            expect(wiki.getTiddlerText("knowledge/llm/foo")).toBe("body");
+        });
+
+        it("rename in caption-mode does not invoke the title sanitiser (free-form text allowed)", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/foo", text: "" }
+            ]));
+            // A label with characters the title sanitiser would strip:
+            // slashes, brackets, etc. They survive as the caption value.
+            var results = producer.applyOps([
+                { op: "rename", id: "kt:knowledge/llm/foo", label: "What/about | this [stuff]?" }
+            ], { "label-field": "caption" }, wiki);
+            expect(results[0].changed).toBe(true);
+            expect(wiki.getTiddler("knowledge/llm/foo").fields.caption)
+                .toBe("What/about | this [stuff]?");
+        });
+
+        it("addNode stamps the chosen field with the unsanitised label", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/training", text: "" }
+            ]));
+            var results = producer.applyOps([
+                { op: "addNode",
+                  parent: "kt:knowledge/llm/training",
+                  node: { id: "kt:placeholder", label: "Fancy Mixed/Case" } }
+            ], { "label-field": "caption" }, wiki);
+            expect(results[0].changed).toBe(true);
+            // Title slug still sanitised (structural identity stays clean) —
+            // slash is among the stripped chars.
+            expect(results[0].newTitle).toBe("knowledge/llm/training/fancy-mixedcase");
+            var t = wiki.getTiddler(results[0].newTitle);
+            // Caption field carries the typed-but-trimmed value (slash kept).
+            expect(t.fields.caption).toBe("Fancy Mixed/Case");
+        });
+
+        it("title-mode (default) does NOT stamp a caption field", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/training", text: "" }
+            ]));
+            var results = producer.applyOps([
+                { op: "addNode",
+                  parent: "kt:knowledge/llm/training",
+                  node: { id: "kt:placeholder", label: "RAG Patterns" } }
+            ], {}, wiki);
+            var t = wiki.getTiddler(results[0].newTitle);
+            expect(t.fields.caption).toBeUndefined();
+        });
+
+        it("returns wanted + parent on collision so the toast has context", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/foo", text: "" },
+                { title: "knowledge/llm/bar", text: "" }
+            ]));
+            var results = producer.applyOps([
+                { op: "rename", id: "kt:knowledge/llm/foo", label: "bar" }
+            ], {}, wiki);
+            expect(results[0].collisionResolved).toBe(true);
+            expect(results[0].wanted).toBe("bar");
+            expect(results[0].parent).toBe("knowledge/llm");
+            expect(results[0].newTitle).toBe("knowledge/llm/bar-2");
+        });
+    });
 });

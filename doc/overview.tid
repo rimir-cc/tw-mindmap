@@ -22,11 +22,15 @@ Inspired by the `flibbles/graph` + engine-adapter split (e.g. `cytoscape-engine`
 
 !! Key features
 
-* ''Engine-agnostic'' — pluggable adapters via `module-type: mindmapengine`. v1 ships with no built-in engine; install a companion plugin such as `rimir/mindmap-elixir`.
+* ''Engine-agnostic'' — pluggable adapters via `module-type: mindmapengine`. Ships with no built-in engine; install a companion plugin such as `rimir/mindmap-elixir`.
 * ''Three producer mechanisms'' — `module-type: mindmap-producer` modules, JSON MDOM tiddlers, or a `filter=` quick form. All feed the same canonical document.
 * ''Base + overlay model'' — view-specific positioning, hides, reparenting and custom nodes ride in a separate overlay tiddler (ordered op log). Multiple views over the same base data are first-class.
+* ''Structural editing (write-back)'' — producers can opt-in to mutate the underlying wiki: drag-rename / drag-reparent / addNode / removeNode become `renameTiddler` (with flibbles/relink cascade), `addTiddler`, `deleteTiddler`. Per-op routing keeps visual ops (collapse, sibling order) in the overlay.
+* ''Focus mode'' — drill into a subtree; ↓/↑/⇪ buttons step in and out.
+* ''Configurable label field'' — visible labels can be driven by `caption` (or any field) instead of title-path-suffix. Decouples display from structural identity.
+* ''Cascade-confirm modal'' — guards large-effect operations: reparenting or deleting a subtree with more than ''N'' descendants pops a confirm dialog before applying.
 * ''Stable IDs with rename rescue'' — producers assign deterministic IDs; orphaned overlay ops survive upstream renames and surface a manual prune action rather than silently disappearing.
-* ''Forward-compatible with slide mode'' — the overlay op vocabulary doubles as the slide-ops vocabulary for the planned v2 presentation player.
+* ''Forward-compatible with slide mode'' — the overlay op vocabulary doubles as the slide-ops vocabulary for the planned presentation player.
 
 !! How it fits together
 

@@ -128,4 +128,32 @@ describe("mindmap-structural-routing", function () {
         );
         expect(result.mode).toBe("structural");
     });
+
+    it("skips cascade-threshold for rename when label-field is non-title", function () {
+        // 5 descendants but rename in caption-mode only touches one field on
+        // one tiddler — no cascade, no confirm modal.
+        var titles = [
+            "knowledge/test/foo/a", "knowledge/test/foo/b", "knowledge/test/foo/c",
+            "knowledge/test/foo/d", "knowledge/test/foo/e"
+        ];
+        var result = router.routeOp(
+            { op: "rename", id: "foo", label: "new label" },
+            STRUCTURAL_PRODUCER,
+            { wiki: fakeWiki(titles), cascadeThreshold: 2, args: { "label-field": "caption" } }
+        );
+        expect(result.mode).toBe("structural");
+    });
+
+    it("still defers reparent in non-title label-field mode (reparent always cascades)", function () {
+        var titles = [
+            "knowledge/test/foo/a", "knowledge/test/foo/b", "knowledge/test/foo/c",
+            "knowledge/test/foo/d", "knowledge/test/foo/e"
+        ];
+        var result = router.routeOp(
+            { op: "reparent", id: "foo", newParent: "bar" },
+            STRUCTURAL_PRODUCER,
+            { wiki: fakeWiki(titles), cascadeThreshold: 2, args: { "label-field": "caption" } }
+        );
+        expect(result.mode).toBe("deferred");
+    });
 });
