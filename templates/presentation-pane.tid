@@ -1,0 +1,51 @@
+title: $:/plugins/rimir/mindmap/templates/presentation-pane
+tags: $:/tags/Macro
+
+\procedure mm-presentation-pane(previewTitle, stateKey, viewTitle)
+
+<$let presentationTitle={{{ [<viewTitle>get[mm.presentation]] }}}>
+
+<$list filter="[<presentationTitle>is[blank]]" variable="_">
+<div class="rr-mindmap-presentation-empty">
+No active presentation. Use the toolbar dropdown above the canvas to pick or create one.
+</div>
+</$list>
+
+<$list filter="[<presentationTitle>!is[blank]]" variable="_">
+<$let nodesList={{{ [<presentationTitle>get[mm.slides-order]] }}}
+      nodeCount={{{ [enlist<nodesList>count[]] }}}>
+<div class="rr-mindmap-presentation-pane">
+<div class="rr-mindmap-presentation-header">
+<strong><$text text=<<presentationTitle>>/></strong>
+<span class="rr-mindmap-presentation-meta"><$text text=<<nodeCount>>/> node<$list filter="[<nodeCount>!match[1]]" variable="_">s</$list></span>
+</div>
+
+<$list filter="[enlist<nodesList>]" variable="nodeTitle" emptyMessage="""<div class='rr-mindmap-presentation-empty'>No nodes added yet. Select a node in the canvas and click "+ Add to presentation" in the bottom-right panel.</div>""">
+<$let nodeSlidesText={{{ [<nodeTitle>get[slides]] }}}
+      nodeSlideCount={{{ [<nodeSlidesText>mm-slide-count[]] }}}
+      isSelected={{{ [<previewTitle>match<nodeTitle>] }}}>
+<div class={{{ [[rr-mindmap-presentation-node]] [<isSelected>!is[blank]then[rr-mindmap-presentation-node-selected]] +[join[ ]] }}}>
+<div class="rr-mindmap-presentation-node-header">
+<span class="rr-mindmap-presentation-node-title"><$text text=<<nodeTitle>>/></span>
+<span class="rr-mindmap-presentation-node-meta"><$text text=<<nodeSlideCount>>/> slide<$list filter="[<nodeSlideCount>!match[1]]" variable="_">s</$list></span>
+</div>
+<$list filter="[range<nodeSlideCount>]" variable="oneIdx" emptyMessage="""<div class='rr-mindmap-presentation-node-empty'>(no slides on this node)</div>""">
+<$let idx={{{ [<oneIdx>subtract[1]] }}}
+      content={{{ [<nodeSlidesText>mm-slide-get<idx>,[content]] }}}
+      layout={{{ [<nodeSlidesText>mm-slide-get<idx>,[layout]] }}}>
+<div class="rr-mindmap-presentation-slide">
+<$mm-slide-content text=<<content>> layout=<<layout>>/>
+</div>
+</$let>
+</$list>
+</div>
+</$let>
+</$list>
+
+</div>
+</$let>
+</$list>
+
+</$let>
+
+\end mm-presentation-pane

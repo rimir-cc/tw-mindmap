@@ -113,7 +113,35 @@ Recognised metadata keys:
 
 The pane uses session state for the dropdown selection (`$:/state/rimir/mindmap/<key>/inspect-mode`), the currently-edited slide index (`$:/state/rimir/mindmap/<key>/slide-editing`), and edit buffers (`$:/state/rimir/mindmap/<key>/slide-buffer-content` etc.) — all `$:/state/` titles, so they don't sync to the server.
 
-Slides are independent of the mindmap structure: any tiddler in the wiki can carry a `slides` field, even ones that aren't part of a mindmap view. Phase 2 will introduce ''named presentations'' (overlay tiddlers that pick + order nodes from a view for playback); this release ships the per-tiddler authoring surface only.
+Slides are independent of the mindmap structure: any tiddler in the wiki can carry a `slides` field, even ones that aren't part of a mindmap view.
+
+!! Named presentations (Phase 2)
+
+A ''presentation'' is a playlist: an ordered list of tiddler titles whose slides will be walked in sequence during playback. Presentations live as their own tiddlers, decoupled from any one view-level overlay — multiple presentations can target the same view, and the same node can appear in multiple presentations.
+
+A presentation tiddler:
+
+* is tagged `$:/tags/rimir/mindmap/presentation`
+* has field `mm.view` — the view tiddler this presentation belongs to
+* has field `mm.slides-order` — TW list of tiddler titles
+* may have fields `mm.transition` and `mm.duration` for the (still planned) player
+
+The currently-active presentation for a view is referenced by the view tiddler's `mm.presentation` field — a regular tiddler field, so the choice survives reloads.
+
+''Authoring flow:''
+
+# The canvas top toolbar shows a ''Presentation: <select>'' dropdown — options are `[none]`, each existing presentation for the view, and `+ New presentation…`. Picking writes the view's `mm.presentation` field.
+# Picking `+ New presentation…` prompts for a name, sanitises a slug under `presentations/<slug>`, creates the tiddler with the right tags and fields, and sets it active.
+# With a presentation active, selecting a node in the canvas reveals a ''+ Add / − Remove'' button in the bottom-right actions panel — toggles the selected tiddler's title in `mm.slides-order`.
+# The preview-pane modebar gains a third option ''Presentation''. Switching to it shows the playlist: each member node's title + its slides, rendered live via `<$mm-slide-content>` in order.
+
+''Lifecycle:''
+
+* Presentations coexist — picking `[none]` deactivates without deleting. Switching presentations is non-destructive.
+* Deleting a presentation tiddler removes it from the toolbar dropdown automatically (the widget watches presentation-tagged tiddlers).
+* Renaming a tiddler in `mm.slides-order` does NOT cascade — Phase 3 will register the field with flibbles/relink for rename cascade.
+
+Phase 3 will add the ''presentation creation mode'' (visual fading of non-included nodes on the canvas, drag-to-reorder, per-slide transition overrides) and the ''fullscreen player'' (sequential walk with keyboard navigation).
 
 !! Overlay tiddler titles and persistence
 

@@ -97,12 +97,14 @@ MindmapWidget.prototype.render = function (parent, nextSibling) {
     this.canvasNode.className = "rr-mindmap-canvas";
     this.mainArea.appendChild(this.canvasNode);
 
-    // Preview pane: empty until a node with a backing tiddler is selected.
-    // Lives outside canvasNode so it doesn't go into fullscreen with the
-    // engine (the canvas keeps the full screen for the map itself).
+    // Preview pane. For view-mode widgets it stays visible at all times so
+    // the inspect-mode dropdown is always reachable (Presentation mode is
+    // whole-view, not selection-dependent). For filter= quick-form widgets
+    // without a view tiddler, we start hidden and let `updatePreviewState`
+    // show it on selection — the legacy single-node-inspect behaviour.
     this.previewPane = this.document.createElement("div");
     this.previewPane.className = "rr-mindmap-preview";
-    this.previewPane.style.display = "none";
+    if (!this.viewAttr) { this.previewPane.style.display = "none"; }
     this.mainArea.appendChild(this.previewPane);
     this.renderPreviewChildren();
 
@@ -262,8 +264,9 @@ MindmapWidget.prototype.currentLabelField = function () {
 };
 
 // Session-only state tiddler for the right-pane inspect mode.
-//   "body"   -> existing body view/edit (default)
-//   "slides" -> slide list + per-slide editor
+//   "body"         -> existing body view/edit (default)
+//   "slides"       -> slide list + per-slide editor (Phase 1)
+//   "presentation" -> ordered slide sequence of the active presentation (Phase 2)
 MindmapWidget.prototype.inspectModeStateTitle = function () {
     var key = this.stateAttr || this.viewAttr || this.filterAttr || "default";
     return "$:/state/rimir/mindmap/" + key + "/inspect-mode";
@@ -271,7 +274,46 @@ MindmapWidget.prototype.inspectModeStateTitle = function () {
 
 MindmapWidget.prototype.currentInspectMode = function () {
     var mode = trim(this.wiki.getTiddlerText(this.inspectModeStateTitle(), ""));
-    return mode === "slides" ? "slides" : "body";
+    if (mode === "slides" || mode === "presentation") { return mode; }
+    return "body";
+};
+
+var PRESENTATION_TAG = "$:/tags/rimir/mindmap/presentation";
+
+// Title of the presentation currently active for this view (empty if none).
+// Stored on the view tiddler's `mm.presentation` field — durable across
+// reloads, intentional since presentation choice is editorial.
+MindmapWidget.prototype.currentPresentationTitle = function () {
+    if (!this.viewAttr) { return ""; }
+    var view = this.wiki.getTiddler(this.viewAttr);
+    return view ? trim(view.fields["mm.presentation"] || "") : "";
+};
+
+// All presentation tiddlers (tag $:/tags/rimir/mindmap/presentation) whose
+// `mm.view` field points at the current view. Sorted alphabetically by title.
+MindmapWidget.prototype.viewPresentations = function () {
+    if (!this.viewAttr) { return []; }
+    var results = [];
+    var self = this;
+    this.wiki.each(function (tiddler, title) {
+        if (!tiddler || !tiddler.fields) { return; }
+        var tags = $tw.utils.parseStringArray(tiddler.fields.tags || "");
+        if (tags.indexOf(PRESENTATION_TAG) < 0) { return; }
+        var view = trim(tiddler.fields["mm.view"] || "");
+        if (view === self.viewAttr) { results.push(title); }
+    });
+    results.sort();
+    return results;
+};
+
+// Does the active presentation include this tiddler title in its
+// `mm.slides-order` list?
+MindmapWidget.prototype.presentationIncludes = function (presentationTitle, nodeTitle) {
+    if (!presentationTitle || !nodeTitle) { return false; }
+    var p = this.wiki.getTiddler(presentationTitle);
+    if (!p) { return false; }
+    var list = $tw.utils.parseStringArray(p.fields["mm.slides-order"] || "");
+    return list.indexOf(nodeTitle) >= 0;
 };
 
 // Stable key used to derive per-widget state-tiddler titles in the preview
@@ -429,15 +471,34 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
     if (!this.previewPane) { return; }
     var wikitext =
         "<$set name='previewTitle' filter='[<__state__>get[text]]'>" +
-        "<$list filter='[<previewTitle>!is[blank]is[tiddler]]' variable='_'>" +
+        "<$let inspectMode={{{ [<__inspectstate__>get[text]] }}} " +
+        "hasSelection={{{ [<previewTitle>!is[blank]is[tiddler]] }}}>" +
+        // Modebar always renders so the inspect-mode dropdown is reachable
+        // even with no node selected — Presentation mode is whole-view, not
+        // selection-dependent.
         "<div class='rr-mindmap-preview-modebar'>" +
-        "<span class='rr-mindmap-preview-modebar-title' title=<<previewTitle>>><$text text=<<previewTitle>>/></span>" +
+        "<span class='rr-mindmap-preview-modebar-title' title=<<previewTitle>>>" +
+        "<%if [<hasSelection>!is[blank]] %>" +
+        "<$text text=<<previewTitle>>/>" +
+        "<%else%>" +
+        "<em class='rr-mindmap-preview-modebar-empty'>(no selection)</em>" +
+        "<%endif%>" +
+        "</span>" +
         "<$select tiddler=<<__inspectstate__>> default='body' class='rr-mindmap-inspect-mode-select'>" +
         "<option value='body'>Body</option>" +
         "<option value='slides'>Slides</option>" +
+        "<option value='presentation'>Presentation</option>" +
         "</$select>" +
         "</div>" +
-        "<$let inspectMode={{{ [<__inspectstate__>get[text]] }}}>" +
+        "<%if [<inspectMode>match[presentation]] %>" +
+        // Presentation mode doesn't require a selected node — the active
+        // presentation drives content independently. Pass viewTitle so the
+        // pane can resolve mm.presentation against the view's field.
+        "<$transclude $variable='mm-presentation-pane' previewTitle=<<previewTitle>> stateKey=<<__statekey__>> viewTitle=<<__viewtitle__>>/>" +
+        "<%else%>" +
+        // Body / Slides modes both require a selected tiddler.
+        "<$list filter='[<previewTitle>!is[blank]is[tiddler]]' variable='_' " +
+        "emptyMessage=\"\"\"<div class='rr-mindmap-preview-empty'>Select a node in the canvas to inspect it.</div>\"\"\">" +
         "<%if [<inspectMode>match[slides]] %>" +
         "<$transclude $variable='mm-slide-pane' previewTitle=<<previewTitle>> stateKey=<<__statekey__>>/>" +
         "<%else%>" +
@@ -459,8 +520,9 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
         "</div>" +
         "</$let>" +
         "<%endif%>" +
-        "</$let>" +
         "</$list>" +
+        "<%endif%>" +
+        "</$let>" +
         "</$set>";
     var parser = this.wiki.parseText("text/vnd.tiddlywiki", wikitext, { parseAsInline: false });
     if (!parser) { return; }
@@ -471,7 +533,8 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
             __state__: this.previewStateTitle(),
             __editstate__: this.previewEditStateTitle(),
             __inspectstate__: this.inspectModeStateTitle(),
-            __statekey__: this.previewStateKey()
+            __statekey__: this.previewStateKey(),
+            __viewtitle__: this.viewAttr || ""
         }
     });
     widgetNode.render(this.previewPane, null);
@@ -501,8 +564,16 @@ MindmapWidget.prototype.updatePreviewState = function (nodeId) {
         title: this.previewEditStateTitle(),
         text: ""
     }));
+    // Preview pane stays visible whenever the widget has a view (so the
+    // inspect-mode dropdown and the presentation pane are reachable without
+    // first selecting a node). When there's no view at all (filter= form
+    // with no slides/presentation plumbing), keep the legacy hide-on-empty.
     if (this.previewPane) {
-        this.previewPane.style.display = title ? "" : "none";
+        if (this.viewAttr) {
+            this.previewPane.style.display = "";
+        } else {
+            this.previewPane.style.display = title ? "" : "none";
+        }
     }
 };
 
@@ -748,6 +819,34 @@ MindmapWidget.prototype.forwardPreviewRefresh = function (changedTiddlers) {
     }
 };
 
+// React to changes that affect the toolbar's presentation dropdown or the
+// actions-panel toggle button: any tiddler tagged as a presentation OR any
+// title in our cached presentation list (covers deletions). Re-populates the
+// dropdown and reflects new membership state in the toggle button.
+MindmapWidget.prototype.refreshPresentationUI = function (changedTiddlers) {
+    if (!this.viewAttr || !this.presentationSelect) { return; }
+    var relevant = false;
+    var cache = this.lastPresentations || [];
+    for (var t in changedTiddlers) {
+        var tiddler = this.wiki.getTiddler(t);
+        if (tiddler && tiddler.fields) {
+            var tags = $tw.utils.parseStringArray(tiddler.fields.tags || "");
+            if (tags.indexOf(PRESENTATION_TAG) >= 0) { relevant = true; break; }
+        }
+        if (cache.indexOf(t) >= 0) { relevant = true; break; }
+    }
+    if (relevant) {
+        this.lastPresentations = this.viewPresentations();
+        this.populatePresentationSelect();
+    }
+    // Active presentation's slides-order may have changed — update the
+    // toggle button's add/remove label.
+    var active = this.currentPresentationTitle();
+    if (active && changedTiddlers[active]) {
+        this.updateActionsVisibility();
+    }
+};
+
 MindmapWidget.prototype.refresh = function (changedTiddlers) {
     var changedAttrs = this.computeAttributes();
     var rebuilders = ["view", "filter", "engine", "overlay", "class", "style", "height", "readonly"];
@@ -836,6 +935,8 @@ MindmapWidget.prototype.refresh = function (changedTiddlers) {
         this.forwardPreviewRefresh(changedTiddlers);
         return true;
     }
+    // Presentation tiddler add/remove/edit → repopulate dropdown + toggle btn.
+    this.refreshPresentationUI(changedTiddlers);
     // Forward to the preview widget so it re-renders when the selected
     // tiddler's body changes or the preview-state tiddler is updated.
     this.forwardPreviewRefresh(changedTiddlers);
@@ -870,6 +971,26 @@ MindmapWidget.prototype.renderToolbar = function () {
     var orphanSelf = this;
     this.orphanBadge.addEventListener("click", function () { orphanSelf.pruneOrphans(); });
     this.toolbarNode.appendChild(this.orphanBadge);
+
+    // Presentation selector — only meaningful for view-mode (no view tiddler =
+    // no place to store mm.presentation). Lives on the canvas toolbar because
+    // it's a view-level chrome element, not selection-dependent. The label-
+    // tagged "Presentation:" prefix makes the dropdown self-explanatory.
+    if (this.viewAttr) {
+        var presentationLabel = this.document.createElement("span");
+        presentationLabel.className = "rr-mindmap-presentation-label";
+        presentationLabel.textContent = "Presentation:";
+        this.toolbarNode.appendChild(presentationLabel);
+
+        var presSelf = this;
+        this.presentationSelect = this.document.createElement("select");
+        this.presentationSelect.className = "rr-mindmap-presentation-select";
+        this.populatePresentationSelect();
+        this.presentationSelect.addEventListener("change", function () {
+            presSelf.handlePresentationChange(presSelf.presentationSelect.value);
+        });
+        this.toolbarNode.appendChild(this.presentationSelect);
+    }
 
     this.containerNode.appendChild(this.toolbarNode);
 
@@ -958,11 +1079,58 @@ MindmapWidget.prototype.renderToolbar = function () {
         // renderPreviewChildren) — it controls what the preview shows, so it
         // belongs above the preview, not floating over the canvas.
 
+        // Presentation-membership toggle. Visible only when a node is
+        // selected AND a presentation is active (otherwise the button has
+        // nothing meaningful to do). Text flips between "+ Add" and "- Remove"
+        // based on whether the node is already in the slides-order list.
+        var presBtn = this.document.createElement("button");
+        presBtn.type = "button";
+        presBtn.className = "rr-mindmap-edit-btn rr-mindmap-presentation-toggle-btn";
+        presBtn.textContent = "+";
+        presBtn.style.display = "none";
+        presBtn.addEventListener("click", function () { self.togglePresentationMembership(); });
+        this.actionsPanel.appendChild(presBtn);
+        this.presentationToggleBtn = presBtn;
+
         // The step-out state is independent of selection — update it once
         // at render time. handleSelect updates the others on selection change.
         this.updateActionsVisibility();
         this.applyLabelFieldClasses();
     }
+};
+
+// Rebuild the toolbar's presentation dropdown options. Called at render time
+// and again on refresh when presentations are added/removed (which arrive as
+// changedTiddlers entries).
+MindmapWidget.prototype.populatePresentationSelect = function () {
+    if (!this.presentationSelect) { return; }
+    while (this.presentationSelect.firstChild) {
+        this.presentationSelect.removeChild(this.presentationSelect.firstChild);
+    }
+    var active = this.currentPresentationTitle();
+    var noneOpt = this.document.createElement("option");
+    noneOpt.value = "";
+    noneOpt.textContent = "[none]";
+    if (!active) { noneOpt.selected = true; }
+    this.presentationSelect.appendChild(noneOpt);
+
+    var presentations = this.viewPresentations();
+    for (var i = 0; i < presentations.length; i++) {
+        var t = presentations[i];
+        var opt = this.document.createElement("option");
+        opt.value = t;
+        // Prefer caption for display; fall back to title.
+        var p = this.wiki.getTiddler(t);
+        var caption = p && trim(p.fields.caption || "");
+        opt.textContent = caption || t;
+        if (t === active) { opt.selected = true; }
+        this.presentationSelect.appendChild(opt);
+    }
+
+    var newOpt = this.document.createElement("option");
+    newOpt.value = "__new__";
+    newOpt.textContent = "+ New presentation…";
+    this.presentationSelect.appendChild(newOpt);
 };
 
 // Visual cue for title-mode on a structural view: tints the canvas with a
@@ -998,13 +1166,7 @@ MindmapWidget.prototype.labelFieldOptions = function () {
 // Compute which buttons should be visible right now and apply.
 MindmapWidget.prototype.updateActionsVisibility = function () {
     if (!this.actionsPanel) { return; }
-    var nodeId = this.selectedNodeId;
-    var producer = findProducerByName(this.producerName);
-    var selectedTitle = null;
-    if (nodeId && producer && typeof producer.titleForOp === "function") {
-        var t = producer.titleForOp({ op: "rename", id: nodeId });
-        if (t && this.wiki.getTiddler(t)) { selectedTitle = t; }
-    }
+    var selectedTitle = this.selectedBackingTitle();
     // ✎ Edit: visible when a real tiddler is selected
     if (this.editBtn) { this.editBtn.style.display = selectedTitle ? "" : "none"; }
     // ↓ Focus into: visible when a real tiddler is selected AND it's not
@@ -1025,6 +1187,21 @@ MindmapWidget.prototype.updateActionsVisibility = function () {
     // dual affordance is the point of having two buttons.
     if (this.stepUpBtn) { this.stepUpBtn.style.display = currentFocus ? "" : "none"; }
     if (this.stepOutBtn) { this.stepOutBtn.style.display = currentFocus ? "" : "none"; }
+    // Presentation-toggle button — visible only when a node is selected AND a
+    // presentation is active for this view.
+    if (this.presentationToggleBtn) {
+        var presentationTitle = this.currentPresentationTitle();
+        if (selectedTitle && presentationTitle) {
+            var isMember = this.presentationIncludes(presentationTitle, selectedTitle);
+            this.presentationToggleBtn.style.display = "";
+            this.presentationToggleBtn.textContent = isMember ? "−" : "+";
+            this.presentationToggleBtn.title = (isMember
+                ? "Remove this node from presentation: "
+                : "Add this node to presentation: ") + presentationTitle;
+        } else {
+            this.presentationToggleBtn.style.display = "none";
+        }
+    }
     // Panel itself stays visible — the label-field selector is global UI
     // that should always be reachable, not gated on a selection.
     this.actionsPanel.style.display = "";
@@ -1071,6 +1248,83 @@ MindmapWidget.prototype.handleStepOut = function () {
         title: this.focusStateTitle(),
         text: ""
     }));
+};
+
+// Resolve the currently-selected node id to its backing tiddler title via
+// the producer's titleForOp helper. Returns null when no selection, no
+// producer mapping, or the resolved title doesn't exist in the wiki.
+MindmapWidget.prototype.selectedBackingTitle = function () {
+    var producer = findProducerByName(this.producerName);
+    if (!producer || typeof producer.titleForOp !== "function") { return null; }
+    var id = this.selectedNodeId;
+    if (!id) { return null; }
+    var title = producer.titleForOp({ op: "rename", id: id });
+    if (!title || !this.wiki.getTiddler(title)) { return null; }
+    return title;
+};
+
+// Toggle the currently-selected node's membership in the active presentation's
+// `mm.slides-order` list. Add if absent; remove if present. No-op when no
+// presentation is active or no node is selected.
+MindmapWidget.prototype.togglePresentationMembership = function () {
+    var presentationTitle = this.currentPresentationTitle();
+    if (!presentationTitle) { return; }
+    var nodeTitle = this.selectedBackingTitle();
+    if (!nodeTitle) { return; }
+    var p = this.wiki.getTiddler(presentationTitle);
+    if (!p) { return; }
+    var list = $tw.utils.parseStringArray(p.fields["mm.slides-order"] || "");
+    var idx = list.indexOf(nodeTitle);
+    var next;
+    if (idx >= 0) {
+        next = list.slice();
+        next.splice(idx, 1);
+    } else {
+        next = list.concat([nodeTitle]);
+    }
+    this.wiki.addTiddler(new $tw.Tiddler(p, {
+        "mm.slides-order": $tw.utils.stringifyList(next)
+    }));
+};
+
+// Dropdown handler — apply the user's selection from the toolbar selector.
+//   ""           -> clear active presentation
+//   "__new__"    -> prompt for a name, create a new presentation, set active
+//   <existing>   -> set as active
+MindmapWidget.prototype.handlePresentationChange = function (value) {
+    if (!this.viewAttr) { return; }
+    if (value === "__new__") {
+        var raw = (typeof window !== "undefined" && window.prompt)
+            ? window.prompt("New presentation name:", "")
+            : "";
+        if (raw == null) {
+            // User cancelled — restore the previous selection
+            if (this.presentationSelect) {
+                this.presentationSelect.value = this.currentPresentationTitle();
+            }
+            return;
+        }
+        var name = (raw + "").replace(/^\s+|\s+$/g, "");
+        if (!name) { return; }
+        var sanitize = require("$:/plugins/rimir/mindmap/lib/sanitize-title.js");
+        var slug = sanitize.sanitize(name) || "presentation";
+        var base = "presentations/" + slug;
+        // Uniquify against existing tiddler titles
+        var existing = Object.create(null);
+        this.wiki.each(function (t, title) { existing[title] = true; });
+        var title = sanitize.uniquify(base, existing);
+        this.wiki.addTiddler(new $tw.Tiddler({
+            title: title,
+            tags: PRESENTATION_TAG,
+            "mm.view": this.viewAttr,
+            "mm.slides-order": "",
+            caption: name
+        }));
+        value = title;
+    }
+    var view = this.wiki.getTiddler(this.viewAttr);
+    if (!view) { return; }
+    this.wiki.addTiddler(new $tw.Tiddler(view, { "mm.presentation": value }));
 };
 
 // Open the title-unlocked popup-edit-modal for the currently-selected node.

@@ -38,6 +38,7 @@ Setting both `view` and `filter` is a configuration error and renders an error b
 |`mm.id-aliases` |no (JSON object) |Old-id → new-id rescue map applied before composition |
 |`mm.focus` |no |Initial focus title — re-roots the MDOM at that subtree on first render |
 |`mm.label-field` |no |Tiddler field driving the visible node label. Default `title` uses the leaf-segment of the title; `caption` (or any field) decouples display from structural identity |
+|`mm.presentation` |no |Title of the currently-active presentation tiddler for this view. Empty means "no presentation". Written by the canvas-toolbar selector |
 
 !! Producer module contract
 
@@ -116,12 +117,18 @@ The adapter SHOULD:
 |`[<text>mm-slide-insert<idx>]` |New text with a blank slide inserted at `idx` |
 |`[<text>mm-slide-remove<idx>]` |New text with slide `idx` removed |
 |`[<text>mm-slide-move<idx>,<delta>]` |New text with slide `idx` moved by `delta` positions |
+|`[mm-presentations<viewTitle>]` |Titles of presentation tiddlers (tag `$:/tags/rimir/mindmap/presentation`) whose `mm.view` matches the operand |
 
 !! Widgets
 
 |!Tag |!Purpose |
 |`<$mindmap>` |The mindmap canvas + preview pane. See attribute table above. |
 |`<$mm-slide-content text="…" layout="…"/>` |Renders the supplied text as wikitext inside a layout-classed div. Used by the slide pane to live-render slide cards. |
+
+!! Tag conventions
+
+|!Tag |!Purpose |
+|`$:/tags/rimir/mindmap/presentation` |Marks a tiddler as a presentation playlist. Required fields: `mm.view` (associated view), `mm.slides-order` (ordered TW list of member tiddler titles). Optional: `mm.transition`, `mm.duration`, `caption` (for the toolbar dropdown label) |
 
 !! Config tiddlers
 

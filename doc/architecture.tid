@@ -150,12 +150,20 @@ Three things were orthogonal at v0.2.3 — structural source (producer), visible
 * The preview pane carries a small modebar above its content: the selected tiddler title on the left, an inspect-mode dropdown ("Body" / "Slides") on the right. Switching to Slides swaps the body view/edit for a slide list with per-slide add/edit/move/delete controls. The dropdown is bound directly to `$:/state/rimir/mindmap/<key>/inspect-mode` via `<$select tiddler=…>`, so changes propagate through the existing widget refresh without JS-side bookkeeping. (The label-field dropdown stays in the canvas actions panel because it controls canvas labels, not the preview.)
 * `lib/parse-slides.js` is pure JS (parse / serialize / update / insert / remove / move). Filter operators in `filters/slides.js` expose these to wikitext. A small `$mm-slide-content` widget renders slide text as wikitext so cards live-render rather than show source.
 
-Phase 2 will add ''named presentations'' — overlay-style tiddlers that pick + order a subset of nodes from a view for playback, with per-slide transition metadata. Slides will be the content the player walks through; presentations are the playlist.
+!!! Named presentations (Phase 2)
+
+A presentation is a ''playlist'': a tiddler tagged `$:/tags/rimir/mindmap/presentation` with `mm.view` (the view it belongs to) and `mm.slides-order` (a TW list of member tiddler titles). The view's `mm.presentation` field names the currently-active presentation — durable, so the choice survives reloads.
+
+* Decoupled from the per-view overlay. Presentations don't write through the overlay log; they're standalone tiddlers, which lets multiple presentations target the same view and lets the same node appear in multiple presentations.
+* Storage: tiddler titles (not producer node-ids). Stable across producer swaps — only tiddler renames can break references (and Phase 3 will register the field with flibbles/relink for rename cascade).
+* UI surfaces are split by concern: canvas top toolbar holds the presentation selector + the "+ New" flow; the bottom-right actions panel gets a `+/−` toggle for selected-node membership; the preview-pane modebar's third option (`Presentation`) renders the read-side playlist.
+
+Phase 3 will add the ''presentation creation mode'' (visual fading of non-included nodes on the canvas, drag-to-reorder of slides-order, per-slide transition overrides) and the ''fullscreen player'' (sequential walk with keyboard navigation).
 
 !! What this is NOT
 
 * ''A graph engine.'' Use `flibbles/graph` + `cytoscape-engine` for general-purpose graphs.
-* ''A slide player.'' Phase 1 ships the authoring surface only — slide playback / named presentations are Phase 2.
+* ''A fullscreen slide player.'' Phase 2 ships the playlist + read-side sequence view; the fullscreen keyboard-driven player is Phase 3.
 
 </$fill>
 </$transclude>
