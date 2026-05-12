@@ -38,7 +38,7 @@ Setting both `view` and `filter` is a configuration error and renders an error b
 |`mm.id-aliases` |no (JSON object) |Old-id → new-id rescue map applied before composition |
 |`mm.focus` |no |Initial focus title — re-roots the MDOM at that subtree on first render |
 |`mm.label-field` |no |Tiddler field driving the visible node label. Default `title` uses the leaf-segment of the title; `caption` (or any field) decouples display from structural identity |
-|`mm.presentation` |no |Title of the currently-active presentation tiddler for this view. Empty means "no presentation". Written by the canvas-toolbar selector |
+|`mm.presentation` |no |Title of the currently-active presentation tiddler for this view. Empty means "no presentation". Written by the preview-pane modebar dropdown when the user picks a presentation |
 
 !! Producer module contract
 
@@ -56,6 +56,7 @@ exports.describe       = function () → { name, args: [...] }    // optional
 exports.capabilities   = { structural: true, structuralOps: ["rename", "reparent", "addNode", "removeNode"] };
 exports.applyOps       = function (ops, args, wiki) → results[]; // mutates the wiki
 exports.titleForOp     = function (op) → string|null;            // for cascade counting
+exports.idForTitle     = function (title) → string|null;         // inverse of titleForOp; used by presentation click-to-select
 exports.rootTitle      = function (args) → string|null;          // for step-out detection
 ```
 

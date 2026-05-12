@@ -368,6 +368,14 @@ exports.titleForOp = function (op) {
     return titleFromId(op.id);
 };
 
+// Inverse of titleForOp / titleFromId: produce the node id for an existing
+// tiddler title. Used by presentation-mode click-to-select to translate a
+// tiddler title from the playlist into the engine's node-id namespace.
+exports.idForTitle = function (title) {
+    if (!title) { return null; }
+    return "kt:" + title;
+};
+
 // Gather the set of direct-child leaf slugs under `parentPath` so we can
 // uniquify a fresh slug without colliding. Returns an Object map.
 function siblingSlugs(wiki, parentPath, excludeLeaf) {

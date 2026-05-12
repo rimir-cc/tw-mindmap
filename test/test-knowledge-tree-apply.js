@@ -49,6 +49,24 @@ describe("mindmap-knowledge-tree-apply", function () {
         });
     });
 
+    describe("idForTitle", function () {
+        it("prefixes a non-empty title with the producer's namespace", function () {
+            expect(producer.idForTitle("knowledge/llm/foo")).toBe("kt:knowledge/llm/foo");
+            expect(producer.idForTitle("anything")).toBe("kt:anything");
+        });
+
+        it("returns null for blank input", function () {
+            expect(producer.idForTitle("")).toBe(null);
+            expect(producer.idForTitle(null)).toBe(null);
+            expect(producer.idForTitle(undefined)).toBe(null);
+        });
+
+        it("round-trips with titleForOp for real titles", function () {
+            var id = producer.idForTitle("knowledge/llm/foo");
+            expect(producer.titleForOp({ op: "rename", id: id })).toBe("knowledge/llm/foo");
+        });
+    });
+
     describe("rename", function () {
         it("renames a leaf tiddler with the sanitised slug", function () {
             var wiki = setupWiki(areaSeed().concat([

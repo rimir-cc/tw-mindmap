@@ -101,7 +101,7 @@ type: text/vnd.tiddlywiki
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.rr-mindmap-preview-modebar .rr-mindmap-inspect-mode-select {
+.rr-mindmap-preview-modebar .rr-mindmap-modebar-select {
     flex: 0 0 auto;
 }
 .rr-mindmap-preview-body {
@@ -225,8 +225,7 @@ type: text/vnd.tiddlywiki
     cursor: not-allowed;
 }
 
-.rr-mindmap-label-field-select,
-.rr-mindmap-inspect-mode-select {
+.rr-mindmap-label-field-select {
     height: 24px;
     padding: 0 4px;
     font-size: 0.85em;
@@ -420,35 +419,27 @@ type: text/vnd.tiddlywiki
     border-color: <<colour tiddler-border>>;
 }
 
-/* Presentation selector — top canvas toolbar. Lives there because picking a
-   presentation is view-level chrome, parallel to producer/engine labels.
-   When the orphan badge is hidden, the selector floats right via its own
-   margin-left:auto so the label still sits next to it. */
-.rr-mindmap-presentation-label {
-    margin-left: auto;
-    font-family: var(--theme-monospace-font, monospace);
-    opacity: 0.65;
+/* Presentation toggle button (actions panel). Same chrome as the other
+   edit-btns; coloured plus/minus glyph. */
+.rr-mindmap-presentation-toggle-btn {
+    font-weight: bold;
 }
-.rr-mindmap-orphan-badge + .rr-mindmap-presentation-label {
-    margin-left: 0.6em;
-}
-.rr-mindmap-presentation-select {
-    height: 22px;
+
+/* Unified mode/presentation dropdown in the preview pane modebar. Replaces
+   the original Body/Slides/Presentation $select — JS-built because the
+   "+ New presentation…" option needs a prompt flow. */
+.rr-mindmap-modebar-select {
+    height: 24px;
     padding: 0 4px;
     font-size: 0.85em;
     line-height: 1;
-    max-width: 180px;
+    flex: 0 0 auto;
+    max-width: 200px;
     border: 1px solid <<colour tiddler-border>>;
     background: <<colour tiddler-background>>;
     color: inherit;
     border-radius: 3px;
     cursor: pointer;
-}
-
-/* Presentation toggle button (actions panel). Same chrome as the other
-   edit-btns; coloured plus/minus glyph. */
-.rr-mindmap-presentation-toggle-btn {
-    font-weight: bold;
 }
 
 /* Presentation pane — third inspect-mode. Stacks per-member node sections,
@@ -493,6 +484,18 @@ type: text/vnd.tiddlywiki
 .rr-mindmap-presentation-node-title {
     font-weight: bold;
     word-break: break-all;
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    font-size: inherit;
+}
+.rr-mindmap-presentation-node-title:hover {
+    text-decoration: underline;
+    color: <<colour primary>>;
 }
 .rr-mindmap-presentation-node-meta {
     font-size: 0.8em;
@@ -506,11 +509,29 @@ type: text/vnd.tiddlywiki
     padding: 4px 0;
 }
 .rr-mindmap-presentation-slide {
-    border: 1px solid <<colour tiddler-border>>;
-    border-radius: 3px;
-    padding: 8px 10px;
-    margin-bottom: 6px;
+    border: 1px solid <<colour message-background>>;
+    border-left: 3px solid <<colour primary>>;
+    border-radius: 4px;
+    margin-bottom: 12px;
     background: <<colour tiddler-background>>;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+}
+.rr-mindmap-presentation-slide-label {
+    padding: 4px 10px;
+    background: <<colour message-background>>;
+    font-family: var(--theme-monospace-font, monospace);
+    font-size: 0.75em;
+    opacity: 0.7;
+    border-bottom: 1px solid <<colour tiddler-border>>;
+}
+.rr-mindmap-presentation-slide-label em {
+    font-style: normal;
+    opacity: 0.7;
+    font-size: 0.95em;
+}
+.rr-mindmap-presentation-slide-body {
+    padding: 10px 12px;
 }
 
 .rr-mindmap-preview-empty,

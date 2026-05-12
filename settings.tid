@@ -130,10 +130,11 @@ The currently-active presentation for a view is referenced by the view tiddler's
 
 ''Authoring flow:''
 
-# The canvas top toolbar shows a ''Presentation: <select>'' dropdown — options are `[none]`, each existing presentation for the view, and `+ New presentation…`. Picking writes the view's `mm.presentation` field.
-# Picking `+ New presentation…` prompts for a name, sanitises a slug under `presentations/<slug>`, creates the tiddler with the right tags and fields, and sets it active.
+# The preview-pane modebar dropdown (above the right pane) unifies mode and presentation choice. Options: ''Body'', ''Slides'', and under a ''Presentations'' optgroup each existing presentation for this view plus ''+ New presentation…''.
+# Picking ''+ New presentation…'' prompts for a name, sanitises a slug under `presentations/<slug>`, creates the tiddler with the right tags and fields, sets it active on the view, and switches inspect-mode to "presentation".
+# Picking an existing presentation atomically activates it (`mm.presentation`) AND switches to "presentation" mode. Picking Body/Slides switches mode without disturbing the active presentation.
 # With a presentation active, selecting a node in the canvas reveals a ''+ Add / − Remove'' button in the bottom-right actions panel — toggles the selected tiddler's title in `mm.slides-order`.
-# The preview-pane modebar gains a third option ''Presentation''. Switching to it shows the playlist: each member node's title + its slides, rendered live via `<$mm-slide-content>` in order.
+# In Presentation mode the right pane shows the playlist: each member node's title (clickable — focuses it on the canvas) plus its slides, rendered live via `<$mm-slide-content>` in order.
 
 ''Lifecycle:''
 

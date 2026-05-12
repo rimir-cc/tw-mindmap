@@ -156,7 +156,7 @@ A presentation is a ''playlist'': a tiddler tagged `$:/tags/rimir/mindmap/presen
 
 * Decoupled from the per-view overlay. Presentations don't write through the overlay log; they're standalone tiddlers, which lets multiple presentations target the same view and lets the same node appear in multiple presentations.
 * Storage: tiddler titles (not producer node-ids). Stable across producer swaps — only tiddler renames can break references (and Phase 3 will register the field with flibbles/relink for rename cascade).
-* UI surfaces are split by concern: canvas top toolbar holds the presentation selector + the "+ New" flow; the bottom-right actions panel gets a `+/−` toggle for selected-node membership; the preview-pane modebar's third option (`Presentation`) renders the read-side playlist.
+* UI surfaces are colocated with the right pane (since "what does the right pane show?" is the question the dropdown answers): the preview-pane modebar dropdown unifies mode + presentation picking — options are Body / Slides / each presentation for the view / + New presentation… in an optgroup. The bottom-right actions panel gets a `+/−` toggle for selected-node membership in the active presentation. Clicking a node title in the playlist dispatches `rr-mindmap-select-node-by-title`; the widget resolves it via the producer's new `idForTitle` helper and calls `engine.focus()` to centre+select on the canvas.
 
 Phase 3 will add the ''presentation creation mode'' (visual fading of non-included nodes on the canvas, drag-to-reorder of slides-order, per-slide transition overrides) and the ''fullscreen player'' (sequential walk with keyboard navigation).
 

@@ -26,7 +26,10 @@ No active presentation. Use the toolbar dropdown above the canvas to pick or cre
       isSelected={{{ [<previewTitle>match<nodeTitle>] }}}>
 <div class={{{ [[rr-mindmap-presentation-node]] [<isSelected>!is[blank]then[rr-mindmap-presentation-node-selected]] +[join[ ]] }}}>
 <div class="rr-mindmap-presentation-node-header">
-<span class="rr-mindmap-presentation-node-title"><$text text=<<nodeTitle>>/></span>
+<$button class="rr-mindmap-presentation-node-title rr-link-btn" tooltip="Select this node in the canvas">
+<$action-sendmessage $message="rr-mindmap-select-node-by-title" title=<<nodeTitle>>/>
+<$text text=<<nodeTitle>>/>
+</$button>
 <span class="rr-mindmap-presentation-node-meta"><$text text=<<nodeSlideCount>>/> slide<$list filter="[<nodeSlideCount>!match[1]]" variable="_">s</$list></span>
 </div>
 <$list filter="[range<nodeSlideCount>]" variable="oneIdx" emptyMessage="""<div class='rr-mindmap-presentation-node-empty'>(no slides on this node)</div>""">
@@ -34,7 +37,10 @@ No active presentation. Use the toolbar dropdown above the canvas to pick or cre
       content={{{ [<nodeSlidesText>mm-slide-get<idx>,[content]] }}}
       layout={{{ [<nodeSlidesText>mm-slide-get<idx>,[layout]] }}}>
 <div class="rr-mindmap-presentation-slide">
+<div class="rr-mindmap-presentation-slide-label">Slide <$text text=<<oneIdx>>/> · <em><$text text=<<layout>>/></em></div>
+<div class="rr-mindmap-presentation-slide-body">
 <$mm-slide-content text=<<content>> layout=<<layout>>/>
+</div>
 </div>
 </$let>
 </$list>
