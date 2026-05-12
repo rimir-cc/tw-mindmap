@@ -261,6 +261,25 @@ MindmapWidget.prototype.currentLabelField = function () {
     return "title";
 };
 
+// Session-only state tiddler for the right-pane inspect mode.
+//   "body"   -> existing body view/edit (default)
+//   "slides" -> slide list + per-slide editor
+MindmapWidget.prototype.inspectModeStateTitle = function () {
+    var key = this.stateAttr || this.viewAttr || this.filterAttr || "default";
+    return "$:/state/rimir/mindmap/" + key + "/inspect-mode";
+};
+
+MindmapWidget.prototype.currentInspectMode = function () {
+    var mode = trim(this.wiki.getTiddlerText(this.inspectModeStateTitle(), ""));
+    return mode === "slides" ? "slides" : "body";
+};
+
+// Stable key used to derive per-widget state-tiddler titles in the preview
+// wikitext template.
+MindmapWidget.prototype.previewStateKey = function () {
+    return this.stateAttr || this.viewAttr || this.filterAttr || "default";
+};
+
 // Compose the full args set passed to producer.produce() AND
 // producer.applyOps. Includes the session-driven focus + label-field so
 // structural mutations know which surface they're editing.
@@ -400,20 +419,29 @@ MindmapWidget.prototype.previewEditStateTitle = function () {
     return "$:/state/rimir/mindmap/" + key + "/preview-edit-state";
 };
 
-// Render the preview pane content. Two modes driven by a state tiddler:
-//   - VIEW: transcluded body, double-click to switch to edit
-//   - EDIT: rr-text-editor with auto-focus; Ctrl-Enter or Escape exits
-// Changes write directly to the tiddler's text field (no draft buffer), so
-// exiting in either way just toggles the state — work is already saved.
+// Render the preview pane content. Branches on inspect-mode:
+//   - "body" mode: existing body view (transcluded) / edit (rr-text-editor)
+//   - "slides" mode: slide list + per-slide editor (templates/slide-pane)
+// Body mode is driven by two state tiddlers: preview-title (selected node's
+// backing tiddler) and preview-edit-state (yes/empty). Slides mode is
+// driven by stateKey + the templates/slide-pane procedure.
 MindmapWidget.prototype.renderPreviewChildren = function () {
     if (!this.previewPane) { return; }
     var wikitext =
         "<$set name='previewTitle' filter='[<__state__>get[text]]'>" +
         "<$list filter='[<previewTitle>!is[blank]is[tiddler]]' variable='_'>" +
-        "<$let editState=<<__editstate__>>>" +
-        "<div class='rr-mindmap-preview-header'>" +
-        "<strong><$text text=<<previewTitle>>/></strong>" +
+        "<div class='rr-mindmap-preview-modebar'>" +
+        "<span class='rr-mindmap-preview-modebar-title' title=<<previewTitle>>><$text text=<<previewTitle>>/></span>" +
+        "<$select tiddler=<<__inspectstate__>> default='body' class='rr-mindmap-inspect-mode-select'>" +
+        "<option value='body'>Body</option>" +
+        "<option value='slides'>Slides</option>" +
+        "</$select>" +
         "</div>" +
+        "<$let inspectMode={{{ [<__inspectstate__>get[text]] }}}>" +
+        "<%if [<inspectMode>match[slides]] %>" +
+        "<$transclude $variable='mm-slide-pane' previewTitle=<<previewTitle>> stateKey=<<__statekey__>>/>" +
+        "<%else%>" +
+        "<$let editState=<<__editstate__>>>" +
         "<div class='rr-mindmap-preview-body'>" +
         "<%if [<editState>get[text]match[yes]] %>" +
         "<$keyboard key='ctrl-Return' actions=\"<$action-setfield $tiddler=<<editState>> text=''/>\">" +
@@ -430,6 +458,8 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
         "<%endif%>" +
         "</div>" +
         "</$let>" +
+        "<%endif%>" +
+        "</$let>" +
         "</$list>" +
         "</$set>";
     var parser = this.wiki.parseText("text/vnd.tiddlywiki", wikitext, { parseAsInline: false });
@@ -439,7 +469,9 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
         document: this.document,
         variables: {
             __state__: this.previewStateTitle(),
-            __editstate__: this.previewEditStateTitle()
+            __editstate__: this.previewEditStateTitle(),
+            __inspectstate__: this.inspectModeStateTitle(),
+            __statekey__: this.previewStateKey()
         }
     });
     widgetNode.render(this.previewPane, null);
@@ -706,6 +738,16 @@ MindmapWidget.prototype.reproduce = function () {
     this.recompose();
 };
 
+// Forward refresh to the preview-pane widget tree so it picks up changes to
+// the selected tiddler (body, slides field, edit-state, inspect-mode). Called
+// from refresh() before each early return — otherwise reproduce()/recompose()
+// would short-circuit propagation and leave the right pane stale.
+MindmapWidget.prototype.forwardPreviewRefresh = function (changedTiddlers) {
+    if (this.previewWidget) {
+        try { this.previewWidget.refresh(changedTiddlers); } catch (e) { /* ignore */ }
+    }
+};
+
 MindmapWidget.prototype.refresh = function (changedTiddlers) {
     var changedAttrs = this.computeAttributes();
     var rebuilders = ["view", "filter", "engine", "overlay", "class", "style", "height", "readonly"];
@@ -754,6 +796,7 @@ MindmapWidget.prototype.refresh = function (changedTiddlers) {
             console.error("[$mindmap] focus re-produce failed", e);
         }
         this.updateActionsVisibility();
+        this.forwardPreviewRefresh(changedTiddlers);
         return true;
     }
     // Label-field switch: re-run the producer so every node's `label`
@@ -768,23 +811,34 @@ MindmapWidget.prototype.refresh = function (changedTiddlers) {
             this.labelFieldSelect.value = this.currentLabelField();
         }
         this.applyLabelFieldClasses();
+        this.forwardPreviewRefresh(changedTiddlers);
         return true;
     }
+    // Inspect-mode switch: the preview-pane wikitext reads the state tiddler
+    // reactively (both for the modebar's $select and for the body-vs-slides
+    // branch), so the change propagates through the preview widget tree on
+    // its own — no JS-side bookkeeping needed.
     if (baseChanged) {
         try { this.reproduce(); } catch (e) {
             console.error("[$mindmap] re-produce failed", e);
         }
+        // CRITICAL: forward to preview even after reproduce. Slides-field
+        // writes land on a watched tiddler, which triggers baseChanged → we
+        // reproduce the MDOM (engine label may change) AND must still nudge
+        // the preview pane so the slide list / slide cards re-read the
+        // updated slides field. Without this the right pane goes stale until
+        // an unrelated refresh (e.g. selecting a different tiddler).
+        this.forwardPreviewRefresh(changedTiddlers);
         return true;
     }
     if (this.overlayTitle && changedTiddlers[this.overlayTitle]) {
         this.recompose();
+        this.forwardPreviewRefresh(changedTiddlers);
         return true;
     }
     // Forward to the preview widget so it re-renders when the selected
     // tiddler's body changes or the preview-state tiddler is updated.
-    if (this.previewWidget) {
-        try { this.previewWidget.refresh(changedTiddlers); } catch (e) { /* ignore */ }
-    }
+    this.forwardPreviewRefresh(changedTiddlers);
     return false;
 };
 
@@ -899,6 +953,10 @@ MindmapWidget.prototype.renderToolbar = function () {
         });
         this.actionsPanel.appendChild(labelFieldSelect);
         this.labelFieldSelect = labelFieldSelect;
+
+        // Inspect-mode lives in the preview pane's modebar (see
+        // renderPreviewChildren) — it controls what the preview shows, so it
+        // belongs above the preview, not floating over the canvas.
 
         // The step-out state is independent of selection — update it once
         // at render time. handleSelect updates the others on selection change.

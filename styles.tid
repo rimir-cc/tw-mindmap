@@ -80,6 +80,30 @@ type: text/vnd.tiddlywiki
     margin-bottom: 8px;
     word-break: break-all;
 }
+/* Modebar at the top of the preview pane: selected-tiddler title on the left,
+   inspect-mode dropdown (Body / Slides) on the right. The dropdown lives here
+   — not over the canvas — because it controls what the preview shows. */
+.rr-mindmap-preview-modebar {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid <<colour tiddler-border>>;
+}
+.rr-mindmap-preview-modebar-title {
+    flex: 1 1 auto;
+    font-family: var(--theme-monospace-font, monospace);
+    font-size: 0.8em;
+    opacity: 0.7;
+    word-break: break-all;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.rr-mindmap-preview-modebar .rr-mindmap-inspect-mode-select {
+    flex: 0 0 auto;
+}
 .rr-mindmap-preview-body {
     line-height: 1.5;
 }
@@ -201,7 +225,8 @@ type: text/vnd.tiddlywiki
     cursor: not-allowed;
 }
 
-.rr-mindmap-label-field-select {
+.rr-mindmap-label-field-select,
+.rr-mindmap-inspect-mode-select {
     height: 24px;
     padding: 0 4px;
     font-size: 0.85em;
@@ -211,6 +236,172 @@ type: text/vnd.tiddlywiki
     color: inherit;
     border-radius: 3px;
     cursor: pointer;
+}
+
+/* Slide pane — replaces the body preview when the inspect-mode dropdown is
+   set to "slides". Renders a list of slide cards with view/edit affordances. */
+.rr-mindmap-slide-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.rr-mindmap-slide-pane-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6em;
+    padding-bottom: 6px;
+    border-bottom: 1px solid <<colour tiddler-border>>;
+}
+.rr-mindmap-slide-pane-header strong {
+    word-break: break-all;
+}
+.rr-mindmap-slide-count {
+    font-size: 0.82em;
+    opacity: 0.65;
+    white-space: nowrap;
+}
+.rr-mindmap-slide-empty {
+    padding: 1em 0;
+    opacity: 0.65;
+    font-style: italic;
+}
+.rr-mindmap-slide-card {
+    border: 1px solid <<colour tiddler-border>>;
+    border-radius: 4px;
+    background: <<colour tiddler-background>>;
+    overflow: hidden;
+}
+.rr-mindmap-slide-card-editing {
+    box-shadow: 0 0 0 2px <<colour primary>>;
+}
+.rr-mindmap-slide-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: <<colour message-background>>;
+    border-bottom: 1px solid <<colour tiddler-border>>;
+    font-size: 0.85em;
+}
+.rr-mindmap-slide-index {
+    font-weight: bold;
+}
+.rr-mindmap-slide-layout-label {
+    font-family: var(--theme-monospace-font, monospace);
+    opacity: 0.6;
+    font-size: 0.85em;
+}
+.rr-mindmap-slide-card-controls {
+    margin-left: auto;
+    display: flex;
+    gap: 2px;
+}
+.rr-mindmap-slide-ctrl {
+    min-width: 22px;
+    padding: 1px 5px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    line-height: 1;
+}
+.rr-mindmap-slide-ctrl:hover {
+    background: <<colour foreground>>;
+    color: <<colour background>>;
+}
+.rr-mindmap-slide-ctrl-danger:hover {
+    background: #b04040;
+    color: #fff;
+}
+.rr-mindmap-slide-card-body {
+    padding: 8px 10px;
+}
+.rr-mindmap-slide-content {
+    line-height: 1.5;
+}
+.rr-mindmap-slide-content-title {
+    text-align: center;
+    font-size: 1.15em;
+    padding: 8px 4px;
+}
+.rr-mindmap-slide-content-title h1,
+.rr-mindmap-slide-content-title h2 {
+    margin: 0;
+}
+.rr-mindmap-slide-content-bullets ul,
+.rr-mindmap-slide-content-bullets ol {
+    margin: 4px 0;
+    padding-left: 1.4em;
+}
+.rr-mindmap-slide-content-error {
+    color: #a00;
+    font-family: var(--theme-monospace-font, monospace);
+    font-size: 0.85em;
+    white-space: pre-wrap;
+}
+.rr-mindmap-slide-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.rr-mindmap-slide-edit-label {
+    font-size: 0.85em;
+    opacity: 0.8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.rr-mindmap-slide-edit-text {
+    width: 100%;
+    min-height: 140px;
+    font-family: var(--theme-monospace-font, monospace);
+    font-size: 0.9em;
+    padding: 6px;
+    border: 1px solid <<colour tiddler-border>>;
+    border-radius: 3px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+.rr-mindmap-slide-edit-notes {
+    flex: 1 1 auto;
+    padding: 3px 6px;
+    border: 1px solid <<colour tiddler-border>>;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+.rr-mindmap-slide-edit-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+.rr-mindmap-slide-save-btn {
+    background: <<colour primary>>;
+    color: <<colour background>>;
+    border: 1px solid <<colour primary>>;
+    border-radius: 3px;
+    padding: 4px 12px;
+    cursor: pointer;
+}
+.rr-mindmap-slide-cancel-btn {
+    background: <<colour tiddler-background>>;
+    border: 1px solid <<colour tiddler-border>>;
+    border-radius: 3px;
+    padding: 4px 12px;
+    cursor: pointer;
+}
+.rr-mindmap-slide-add-row {
+    margin-top: 6px;
+}
+.rr-mindmap-slide-add-btn {
+    background: <<colour tiddler-background>>;
+    border: 1px dashed <<colour tiddler-border>>;
+    border-radius: 4px;
+    padding: 6px 14px;
+    cursor: pointer;
+    width: 100%;
+}
+.rr-mindmap-slide-add-btn:hover {
+    background: <<colour message-background>>;
 }
 
 .rr-mindmap-orphan-badge {

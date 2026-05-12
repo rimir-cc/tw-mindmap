@@ -1,0 +1,118 @@
+title: $:/plugins/rimir/mindmap/templates/slide-pane
+tags: $:/tags/Macro
+
+\procedure mm-slide-card(idx, slidesText, previewTitle, stateKey, editingIdx, slideCount)
+
+<$let content={{{ [<slidesText>mm-slide-get<idx>,[content]] }}}
+      layout={{{ [<slidesText>mm-slide-get<idx>,[layout]] }}}
+      notes={{{ [<slidesText>mm-slide-get<idx>,[notes]] }}}
+      editingState={{{ [<stateKey>addprefix[$:/state/rimir/mindmap/]addsuffix[/slide-editing]] }}}
+      contentBuffer={{{ [<stateKey>addprefix[$:/state/rimir/mindmap/]addsuffix[/slide-buffer-content]] }}}
+      layoutBuffer={{{ [<stateKey>addprefix[$:/state/rimir/mindmap/]addsuffix[/slide-buffer-layout]] }}}
+      notesBuffer={{{ [<stateKey>addprefix[$:/state/rimir/mindmap/]addsuffix[/slide-buffer-notes]] }}}
+      isEditing={{{ [<idx>match<editingIdx>] }}}
+      humanIdx={{{ [<idx>add[1]] }}}
+      lastIdx={{{ [<slideCount>subtract[1]] }}}>
+<div class={{{ [[rr-mindmap-slide-card]] [<isEditing>!is[blank]then[rr-mindmap-slide-card-editing]] +[join[ ]] }}}>
+<div class="rr-mindmap-slide-card-header">
+<span class="rr-mindmap-slide-index">#<$text text=<<humanIdx>>/></span>
+<span class="rr-mindmap-slide-layout-label"><$text text=<<layout>>/></span>
+<span class="rr-mindmap-slide-card-controls">
+<$list filter="[<isEditing>is[blank]]" variable="_">
+<$button class="tc-btn-invisible rr-mindmap-slide-ctrl" tooltip="Edit slide">
+<$action-setfield $tiddler=<<contentBuffer>> text=<<content>>/>
+<$action-setfield $tiddler=<<layoutBuffer>> text=<<layout>>/>
+<$action-setfield $tiddler=<<notesBuffer>> text=<<notes>>/>
+<$action-setfield $tiddler=<<editingState>> text=<<idx>>/>
+&#x270e;
+</$button>
+<$list filter="[<idx>!match[0]]" variable="_">
+<$button class="tc-btn-invisible rr-mindmap-slide-ctrl" tooltip="Move up">
+<$action-setfield $tiddler=<<previewTitle>> slides={{{ [<slidesText>mm-slide-move<idx>,[-1]] }}}/>
+&#x2191;
+</$button>
+</$list>
+<$list filter="[<idx>!match<lastIdx>]" variable="_">
+<$button class="tc-btn-invisible rr-mindmap-slide-ctrl" tooltip="Move down">
+<$action-setfield $tiddler=<<previewTitle>> slides={{{ [<slidesText>mm-slide-move<idx>,[1]] }}}/>
+&#x2193;
+</$button>
+</$list>
+<$button class="tc-btn-invisible rr-mindmap-slide-ctrl rr-mindmap-slide-ctrl-danger" tooltip="Delete slide">
+<$action-setfield $tiddler=<<previewTitle>> slides={{{ [<slidesText>mm-slide-remove<idx>] }}}/>
+&#x2715;
+</$button>
+</$list>
+</span>
+</div>
+<div class="rr-mindmap-slide-card-body">
+<$list filter="[<isEditing>!is[blank]]" variable="_" emptyMessage="""<$mm-slide-content text=<<content>> layout=<<layout>>/>""">
+<div class="rr-mindmap-slide-edit-form">
+<label class="rr-mindmap-slide-edit-label">Layout:
+<$select tiddler=<<layoutBuffer>> default="default">
+<option>default</option>
+<option>title</option>
+<option>bullets</option>
+</$select>
+</label>
+<label class="rr-mindmap-slide-edit-label">Content:</label>
+<$edit-text tiddler=<<contentBuffer>> tag="textarea" class="rr-mindmap-slide-edit-text" focus="yes"/>
+<label class="rr-mindmap-slide-edit-label">Notes (presenter):
+<$edit-text tiddler=<<notesBuffer>> tag="input" class="rr-mindmap-slide-edit-notes"/>
+</label>
+<div class="rr-mindmap-slide-edit-buttons">
+<$let newContent={{{ [<contentBuffer>get[text]] }}}
+      newLayout={{{ [<layoutBuffer>get[text]] }}}
+      newNotes={{{ [<notesBuffer>get[text]] }}}>
+<$button class="rr-mindmap-slide-save-btn">
+<$action-setfield $tiddler=<<previewTitle>> slides={{{ [<slidesText>mm-slide-update<idx>,<newContent>,<newLayout>,<newNotes>] }}}/>
+<$action-setfield $tiddler=<<editingState>> text=""/>
+Save
+</$button>
+</$let>
+<$button class="rr-mindmap-slide-cancel-btn">
+<$action-setfield $tiddler=<<editingState>> text=""/>
+Cancel
+</$button>
+</div>
+</div>
+</$list>
+</div>
+</div>
+</$let>
+
+\end mm-slide-card
+
+\procedure mm-slide-pane(previewTitle, stateKey)
+
+<$let slidesText={{{ [<previewTitle>get[slides]] }}}
+      slideCount={{{ [<slidesText>mm-slide-count[]] }}}
+      editingState={{{ [<stateKey>addprefix[$:/state/rimir/mindmap/]addsuffix[/slide-editing]] }}}
+      contentBuffer={{{ [<stateKey>addprefix[$:/state/rimir/mindmap/]addsuffix[/slide-buffer-content]] }}}
+      layoutBuffer={{{ [<stateKey>addprefix[$:/state/rimir/mindmap/]addsuffix[/slide-buffer-layout]] }}}
+      notesBuffer={{{ [<stateKey>addprefix[$:/state/rimir/mindmap/]addsuffix[/slide-buffer-notes]] }}}
+      editingIdx={{{ [<editingState>get[text]] }}}
+      appendIdx={{{ [<slideCount>] }}}>
+<div class="rr-mindmap-slide-pane">
+<div class="rr-mindmap-slide-pane-header">
+<span class="rr-mindmap-slide-count"><$text text=<<slideCount>>/> slide<$list filter="[<slideCount>!match[1]]" variable="_">s</$list></span>
+</div>
+<$list filter="[range<slideCount>]" variable="oneIdx" emptyMessage="""<div class='rr-mindmap-slide-empty'>No slides yet. Click "+ Add slide" to create one.</div>""">
+<$let idx={{{ [<oneIdx>subtract[1]] }}}>
+<$transclude $variable="mm-slide-card" idx=<<idx>> slidesText=<<slidesText>> previewTitle=<<previewTitle>> stateKey=<<stateKey>> editingIdx=<<editingIdx>> slideCount=<<slideCount>>/>
+</$let>
+</$list>
+<div class="rr-mindmap-slide-add-row">
+<$button class="rr-mindmap-slide-add-btn">
+<$action-setfield $tiddler=<<previewTitle>> slides={{{ [<slidesText>mm-slide-insert<appendIdx>] }}}/>
+<$action-setfield $tiddler=<<contentBuffer>> text=""/>
+<$action-setfield $tiddler=<<layoutBuffer>> text="default"/>
+<$action-setfield $tiddler=<<notesBuffer>> text=""/>
+<$action-setfield $tiddler=<<editingState>> text=<<appendIdx>>/>
++ Add slide
+</$button>
+</div>
+</div>
+</$let>
+
+\end mm-slide-pane

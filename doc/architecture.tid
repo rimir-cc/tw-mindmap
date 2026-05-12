@@ -140,10 +140,22 @@ The mind-elixir adapter advertises `capabilities.applyOps = false` — the widge
 # `$:/config/rimir/mindmap/default-engine`
 # First registered `mindmapengine` module (alphabetical iteration order)
 
+!! Slide authoring (Phase 1) — orthogonal fourth axis
+
+Three things were orthogonal at v0.2.3 — structural source (producer), visible label (label-field), per-view overlay (collapse / reorder / hide ops). v0.2.4 adds a fourth: ''per-tiddler slide content''.
+
+* Storage: a single `slides` field on the tiddler. Wikitext slices separated by lines of exactly `===`. Each slice may begin with `!! layout: <name>` and `!! notes: <text>` directives followed by a blank line and the body.
+* No producer involvement: the `slides` field is tiddler-owned. A producer's MDOM neither inflates nor projects slides — they're read straight from `wiki.getTiddler(title)` by the slide pane in the preview.
+* No overlay involvement: edits write back to the `slides` field directly (no op log). The overlay still serves visual ops (`hide`, `setAttr`, `reorder`) regardless of slide state.
+* The preview pane carries a small modebar above its content: the selected tiddler title on the left, an inspect-mode dropdown ("Body" / "Slides") on the right. Switching to Slides swaps the body view/edit for a slide list with per-slide add/edit/move/delete controls. The dropdown is bound directly to `$:/state/rimir/mindmap/<key>/inspect-mode` via `<$select tiddler=…>`, so changes propagate through the existing widget refresh without JS-side bookkeeping. (The label-field dropdown stays in the canvas actions panel because it controls canvas labels, not the preview.)
+* `lib/parse-slides.js` is pure JS (parse / serialize / update / insert / remove / move). Filter operators in `filters/slides.js` expose these to wikitext. A small `$mm-slide-content` widget renders slide text as wikitext so cards live-render rather than show source.
+
+Phase 2 will add ''named presentations'' — overlay-style tiddlers that pick + order a subset of nodes from a view for playback, with per-slide transition metadata. Slides will be the content the player walks through; presentations are the playlist.
+
 !! What this is NOT
 
 * ''A graph engine.'' Use `flibbles/graph` + `cytoscape-engine` for general-purpose graphs.
-* ''A slide player.'' Planned — the overlay op vocabulary is forward-compatible (a slide is a named overlay or a layered chain of overlays).
+* ''A slide player.'' Phase 1 ships the authoring surface only — slide playback / named presentations are Phase 2.
 
 </$fill>
 </$transclude>

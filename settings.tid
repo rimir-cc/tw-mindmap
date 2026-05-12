@@ -84,6 +84,37 @@ The list of pickable fields is taken from this config tiddler, one field per lin
 
 The choice is stored in `$:/state/rimir/mindmap/<key>/label-field` (session-scoped — lost on reload). A view tiddler can set `mm.label-field` for a stable per-view default.
 
+!! Slide authoring (right pane)
+
+The preview pane carries a modebar above its content with the selected tiddler's title on the left and an ''inspect-mode'' dropdown ("Body" / "Slides") on the right. Switching to ''Slides'' replaces the body preview with a list of slide cards for the selected tiddler — add, edit, move up/down, delete. Each tiddler can carry zero-or-more slides on a single `slides` field; the slide pane reads and writes this field directly. The dropdown lives in the preview (not the canvas actions panel) because it controls what the preview shows, and shouldn't crowd the graph chrome.
+
+The slides field is wikitext, with one or more slides separated by a line containing only `===`. Per-slide metadata is encoded as directives at the top of each slice:
+
+```
+!! layout: title
+# Welcome to topic X
+
+===
+
+!! layout: bullets
+* point A
+* point B
+* point C
+
+===
+
+Plain content with no directives uses the default layout.
+```
+
+Recognised metadata keys:
+
+* `layout` — one of `default`, `title`, `bullets`, or any custom value (the value is used as a CSS class; v1 ships styles for `default` / `title` / `bullets`).
+* `notes` — single-line presenter notes.
+
+The pane uses session state for the dropdown selection (`$:/state/rimir/mindmap/<key>/inspect-mode`), the currently-edited slide index (`$:/state/rimir/mindmap/<key>/slide-editing`), and edit buffers (`$:/state/rimir/mindmap/<key>/slide-buffer-content` etc.) — all `$:/state/` titles, so they don't sync to the server.
+
+Slides are independent of the mindmap structure: any tiddler in the wiki can carry a `slides` field, even ones that aren't part of a mindmap view. Phase 2 will introduce ''named presentations'' (overlay tiddlers that pick + order nodes from a view for playback); this release ships the per-tiddler authoring surface only.
+
 !! Overlay tiddler titles and persistence
 
 Drag/rename/collapse changes are stored in the overlay tiddler named by the view's `mm.overlay` field (or the `overlay=` widget attribute). For changes to survive browser reloads and server restarts, that title MUST be //synced to the server// — that is, it MUST match the wiki's `$:/config/SyncFilter`.

@@ -30,7 +30,8 @@ Inspired by the `flibbles/graph` + engine-adapter split (e.g. `cytoscape-engine`
 * ''Configurable label field'' — visible labels can be driven by `caption` (or any field) instead of title-path-suffix. Decouples display from structural identity.
 * ''Cascade-confirm modal'' — guards large-effect operations: reparenting or deleting a subtree with more than ''N'' descendants pops a confirm dialog before applying.
 * ''Stable IDs with rename rescue'' — producers assign deterministic IDs; orphaned overlay ops survive upstream renames and surface a manual prune action rather than silently disappearing.
-* ''Forward-compatible with slide mode'' — the overlay op vocabulary doubles as the slide-ops vocabulary for the planned presentation player.
+* ''Slide authoring (Phase 1)'' — each tiddler can carry a `slides` field (wikitext slices separated by `===` with optional `!! layout:` directives). A modebar at the top of the preview pane has an inspect-mode dropdown ("Body" / "Slides") that swaps the body preview for a slide list with add/edit/move/delete controls.
+* ''Forward-compatible with slide mode'' — Phase 2 will layer named presentations (overlay tiddlers selecting + ordering nodes for playback) on top of the per-tiddler slide authoring.
 
 !! How it fits together
 
