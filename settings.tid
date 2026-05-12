@@ -86,34 +86,42 @@ The choice is stored in `$:/state/rimir/mindmap/<key>/label-field` (session-scop
 
 !! Slide authoring (right pane)
 
-The preview pane carries a modebar above its content with the selected tiddler's title on the left and an ''inspect-mode'' dropdown ("Body" / "Slides") on the right. Switching to ''Slides'' replaces the body preview with a list of slide cards for the selected tiddler — add, edit, move up/down, delete. Each tiddler can carry zero-or-more slides on a single `slides` field; the slide pane reads and writes this field directly. The dropdown lives in the preview (not the canvas actions panel) because it controls what the preview shows, and shouldn't crowd the graph chrome.
+The preview pane carries a modebar above its content with the selected tiddler's title on the left and a unified dropdown on the right — ''Body'' / ''Slides'' / ''<each presentation>'' / ''+ New presentation…''. Switching to ''Slides'' replaces the body preview with a list of slide cards for the selected node — add, edit (inline), move up/down, delete.
 
-The slides field is wikitext, with one or more slides separated by a line containing only `===`. Per-slide metadata is encoded as directives at the top of each slice:
+Each slide is its own tiddler at `<owner>/slides/<slug>`:
 
-```
-!! layout: title
-# Welcome to topic X
+|!Field |!Value |
+|`kn.type` |`slide` |
+|tags |`$:/tags/rimir/mindmap/slide` |
+|`mm.slide-of` |Owner tiddler title (back-reference; relink-titles cascades on owner-rename) |
+|`mm.slide-layout` |`default` / `title` / `bullets` / any custom CSS class |
+|`mm.slide-notes` |Single-line presenter notes |
+|caption |Optional display name shown in the slide list |
+|text |Slide body — plain wikitext |
 
-===
+The owner tiddler's `mm.slide-order` TW list field carries the slides in display / playback order. When the owner is renamed via the structural editing flow, `flibbles/relink-titles` automatically renames the whole `<owner>/slides/<*>` subtree, so the slide references in `mm.slide-order` survive the rename without manual fix-up.
 
-!! layout: bullets
-* point A
-* point B
-* point C
+''Recognised layouts:''
 
-===
+* `default` — full-bleed wikitext content (no extra style).
+* `title` — centred large heading (CSS class `rr-mindmap-slide-content-title`).
+* `bullets` — tighter bullet list styling (CSS class `rr-mindmap-slide-content-bullets`).
+* Any custom value — used verbatim as a CSS class (`rr-mindmap-slide-content-<value>`); style it yourself.
 
-Plain content with no directives uses the default layout.
-```
+''+ Add slide:''
 
-Recognised metadata keys:
+Clicking ''+ Add slide'' creates a blank slide tiddler under the selected node (the `rr-mindmap-add-slide` widget message handles the creation + slug uniquification) and opens it inline in edit mode — type the caption / pick a layout / write the body, and every keystroke writes through (no Save button; ''Done'' just collapses the editor back to view mode).
 
-* `layout` — one of `default`, `title`, `bullets`, or any custom value (the value is used as a CSS class; v1 ships styles for `default` / `title` / `bullets`).
-* `notes` — single-line presenter notes.
+''Slide exclusion:''
 
-The pane uses session state for the dropdown selection (`$:/state/rimir/mindmap/<key>/inspect-mode`), the currently-edited slide index (`$:/state/rimir/mindmap/<key>/slide-editing`), and edit buffers (`$:/state/rimir/mindmap/<key>/slide-buffer-content` etc.) — all `$:/state/` titles, so they don't sync to the server.
+The `knowledge-tree` producer skips slide-tagged tiddlers (both in the produced MDOM and the watched-titles filter). Slides are content owned by their parent node, not structural nodes in the tree.
 
-Slides are independent of the mindmap structure: any tiddler in the wiki can carry a `slides` field, even ones that aren't part of a mindmap view.
+''Session state:''
+
+* `$:/state/rimir/mindmap/<key>/inspect-mode` — Body / Slides / Presentation
+* `$:/state/rimir/mindmap/<key>/slide-editing` — title of the slide currently in edit mode (empty = list view)
+
+Both are `$:/state/` titles, so they don't sync.
 
 !! Named presentations (Phase 2)
 
@@ -134,7 +142,7 @@ The currently-active presentation for a view is referenced by the view tiddler's
 # Picking ''+ New presentation…'' prompts for a name, sanitises a slug under `presentations/<slug>`, creates the tiddler with the right tags and fields, sets it active on the view, and switches inspect-mode to "presentation".
 # Picking an existing presentation atomically activates it (`mm.presentation`) AND switches to "presentation" mode. Picking Body/Slides switches mode without disturbing the active presentation.
 # With a presentation active, selecting a node in the canvas reveals a ''+ Add / − Remove'' button in the bottom-right actions panel — toggles the selected tiddler's title in `mm.slides-order`.
-# In Presentation mode the right pane shows the playlist: each member node's title (clickable — focuses it on the canvas) plus its slides, rendered live via `<$mm-slide-content>` in order.
+# In Presentation mode the right pane shows the playlist: each member node's title (clickable — focuses it on the canvas) plus its slide tiddlers (via `[<nodeTitle>mm-slides[]]`), rendered live with their layout class.
 
 ''Lifecycle:''
 

@@ -3,10 +3,9 @@ title: $:/plugins/rimir/mindmap/test/test-slide-filters.js
 type: application/javascript
 tags: [[$:/tags/test-spec]]
 
-Unit tests for filters/slides.js — exercises the operator functions directly
-(no wiki harness needed) by feeding them a fake `source` iterator. The
-operators take the slides-field text as input and return either a derived
-value (count / JSON / one field) or a new serialized slides text (mutators).
+Unit tests for filters/slides.js. Operators take owner-tiddler titles as input
+and consult mm.slide-order on each — exercise against a fresh wiki so the
+look-ups go through the real getTiddler / parseStringArray paths.
 
 \*/
 
@@ -14,129 +13,78 @@ value (count / JSON / one field) or a new serialized slides text (mutators).
 
 describe("mindmap-slide-filters", function () {
     var ops = require("$:/plugins/rimir/mindmap/filters/slides.js");
-    var lib = require("$:/plugins/rimir/mindmap/lib/parse-slides.js");
+    var lib = require("$:/plugins/rimir/mindmap/lib/slide-tiddlers.js");
 
-    // Build a source iterator that yields one or more title strings — that's
-    // what filter operators receive as input.
+    function setupWiki(tiddlers) {
+        var wiki = new $tw.Wiki();
+        wiki.addTiddlers(tiddlers || []);
+        wiki.addIndexersToWiki();
+        return wiki;
+    }
+
+    function ownerSeed() {
+        return [{ title: "knowledge/llm/foo", "kn.type": "note", text: "" }];
+    }
+
     function source(titles) {
         return function (callback) {
-            for (var i = 0; i < titles.length; i++) {
-                callback(null, titles[i]);
-            }
+            for (var i = 0; i < titles.length; i++) { callback(null, titles[i]); }
         };
     }
 
-    function operator(operands) {
-        return { operand: operands[0] || "", operands: operands.slice() };
-    }
+    describe("mm-slides", function () {
+        it("returns slides in mm.slide-order order", function () {
+            var wiki = setupWiki(ownerSeed());
+            var t1 = lib.addSlide(wiki, "knowledge/llm/foo");
+            var t2 = lib.addSlide(wiki, "knowledge/llm/foo");
+            var out = ops["mm-slides"](source(["knowledge/llm/foo"]), {}, { wiki: wiki });
+            expect(out).toEqual([t1, t2]);
+        });
+
+        it("returns nothing for owners with no slides", function () {
+            var wiki = setupWiki(ownerSeed());
+            expect(ops["mm-slides"](source(["knowledge/llm/foo"]), {}, { wiki: wiki })).toEqual([]);
+        });
+
+        it("concatenates results across multiple input owners", function () {
+            var wiki = setupWiki(ownerSeed().concat([
+                { title: "knowledge/llm/bar", "kn.type": "note", text: "" }
+            ]));
+            var t1 = lib.addSlide(wiki, "knowledge/llm/foo");
+            var t2 = lib.addSlide(wiki, "knowledge/llm/bar");
+            var out = ops["mm-slides"](source(["knowledge/llm/foo", "knowledge/llm/bar"]), {}, { wiki: wiki });
+            expect(out).toEqual([t1, t2]);
+        });
+    });
 
     describe("mm-slide-count", function () {
-        it("returns 0 for empty input", function () {
-            expect(ops["mm-slide-count"](source([""]), operator([]))).toEqual(["0"]);
+        it("returns 0 for owners with no slides", function () {
+            var wiki = setupWiki(ownerSeed());
+            expect(ops["mm-slide-count"](source(["knowledge/llm/foo"]), {}, { wiki: wiki }))
+                .toEqual(["0"]);
         });
-        it("counts slides separated by ===", function () {
-            expect(ops["mm-slide-count"](source(["a\n===\nb\n===\nc"]), operator([]))).toEqual(["3"]);
-        });
-        it("processes each input title independently", function () {
-            var out = ops["mm-slide-count"](source(["a", "a\n===\nb"]), operator([]));
-            expect(out).toEqual(["1", "2"]);
+
+        it("returns the slide count per input title", function () {
+            var wiki = setupWiki(ownerSeed());
+            lib.addSlide(wiki, "knowledge/llm/foo");
+            lib.addSlide(wiki, "knowledge/llm/foo");
+            expect(ops["mm-slide-count"](source(["knowledge/llm/foo"]), {}, { wiki: wiki }))
+                .toEqual(["2"]);
         });
     });
 
-    describe("mm-slide-parse", function () {
-        it("emits JSON-encoded array of slide objects", function () {
-            var out = ops["mm-slide-parse"](source(["!! layout: title\n\nhead"]), operator([]));
-            var parsed = JSON.parse(out[0]);
-            expect(parsed.length).toBe(1);
-            expect(parsed[0].layout).toBe("title");
-            expect(parsed[0].content).toBe("head");
+    describe("mm-has-slides", function () {
+        it("returns 'no' for owners with no slides", function () {
+            var wiki = setupWiki(ownerSeed());
+            expect(ops["mm-has-slides"](source(["knowledge/llm/foo"]), {}, { wiki: wiki }))
+                .toEqual(["no"]);
         });
-    });
 
-    describe("mm-slide-get", function () {
-        var text = "!! layout: title\n!! notes: speaker\n\nhead\n\n===\n\nbody two";
-
-        it("returns the content of slide at index", function () {
-            expect(ops["mm-slide-get"](source([text]), operator(["0", "content"]))).toEqual(["head"]);
-            expect(ops["mm-slide-get"](source([text]), operator(["1", "content"]))).toEqual(["body two"]);
-        });
-        it("returns the layout field", function () {
-            expect(ops["mm-slide-get"](source([text]), operator(["0", "layout"]))).toEqual(["title"]);
-            expect(ops["mm-slide-get"](source([text]), operator(["1", "layout"]))).toEqual(["default"]);
-        });
-        it("returns the notes field", function () {
-            expect(ops["mm-slide-get"](source([text]), operator(["0", "notes"]))).toEqual(["speaker"]);
-        });
-        it("defaults the field operand to content", function () {
-            expect(ops["mm-slide-get"](source([text]), operator(["0"]))).toEqual(["head"]);
-        });
-        it("returns empty string for out-of-range index", function () {
-            expect(ops["mm-slide-get"](source([text]), operator(["99", "content"]))).toEqual([""]);
-        });
-    });
-
-    describe("mm-slide-update", function () {
-        it("writes content+layout+notes at the given index", function () {
-            var text = "a\n\n===\n\nb";
-            var out = ops["mm-slide-update"](source([text]),
-                operator(["1", "B!", "title", "shout"]));
-            var parsed = lib.parse(out[0]);
-            expect(parsed[1]).toEqual({ layout: "title", notes: "shout", content: "B!" });
-            // Slide 0 untouched
-            expect(parsed[0].content).toBe("a");
-        });
-        it("is a no-op for out-of-range index (returns input unchanged)", function () {
-            var text = "a";
-            var out = ops["mm-slide-update"](source([text]),
-                operator(["5", "x", "default", ""]));
-            expect(out[0]).toBe(text);
-        });
-    });
-
-    describe("mm-slide-insert", function () {
-        it("inserts a blank slide at the supplied index", function () {
-            var text = "a\n\n===\n\nb";
-            var out = ops["mm-slide-insert"](source([text]), operator(["1"]));
-            var parsed = lib.parse(out[0]);
-            expect(parsed.length).toBe(3);
-            expect(parsed[0].content).toBe("a");
-            expect(parsed[1].content).toBe("");
-            expect(parsed[2].content).toBe("b");
-        });
-        it("inserts at end when idx equals slide count", function () {
-            var out = ops["mm-slide-insert"](source(["a"]), operator(["1"]));
-            expect(lib.parse(out[0]).length).toBe(2);
-        });
-        it("survives a round-trip from empty (no slides → 1 slide)", function () {
-            // This is the bug that bit the live + Add slide button: empty
-            // input → insert blank → serialize → must NOT be empty.
-            var out = ops["mm-slide-insert"](source([""]), operator(["0"]));
-            expect(out[0]).not.toBe("");
-            expect(lib.parse(out[0]).length).toBe(1);
-        });
-    });
-
-    describe("mm-slide-remove", function () {
-        it("removes the slide at index", function () {
-            var text = "a\n\n===\n\nb\n\n===\n\nc";
-            var out = ops["mm-slide-remove"](source([text]), operator(["1"]));
-            expect(lib.parse(out[0]).map(function (s) { return s.content; }))
-                .toEqual(["a", "c"]);
-        });
-    });
-
-    describe("mm-slide-move", function () {
-        it("moves a slide by the supplied delta", function () {
-            var text = "a\n\n===\n\nb\n\n===\n\nc";
-            var out = ops["mm-slide-move"](source([text]), operator(["2", "-1"]));
-            expect(lib.parse(out[0]).map(function (s) { return s.content; }))
-                .toEqual(["a", "c", "b"]);
-        });
-        it("defaults delta to +1 when omitted", function () {
-            var text = "a\n\n===\n\nb";
-            var out = ops["mm-slide-move"](source([text]), operator(["0"]));
-            expect(lib.parse(out[0]).map(function (s) { return s.content; }))
-                .toEqual(["b", "a"]);
+        it("returns 'yes' once at least one slide exists", function () {
+            var wiki = setupWiki(ownerSeed());
+            lib.addSlide(wiki, "knowledge/llm/foo");
+            expect(ops["mm-has-slides"](source(["knowledge/llm/foo"]), {}, { wiki: wiki }))
+                .toEqual(["yes"]);
         });
     });
 });

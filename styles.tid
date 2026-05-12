@@ -332,11 +332,12 @@ type: text/vnd.tiddlywiki
     margin: 4px 0;
     padding-left: 1.4em;
 }
-.rr-mindmap-slide-content-error {
-    color: #a00;
-    font-family: var(--theme-monospace-font, monospace);
-    font-size: 0.85em;
-    white-space: pre-wrap;
+.rr-mindmap-slide-caption {
+    font-weight: 600;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .rr-mindmap-slide-edit-form {
     display: flex;
@@ -361,12 +362,15 @@ type: text/vnd.tiddlywiki
     resize: vertical;
     box-sizing: border-box;
 }
-.rr-mindmap-slide-edit-notes {
+.rr-mindmap-slide-edit-notes,
+.rr-mindmap-slide-edit-caption {
     flex: 1 1 auto;
     padding: 3px 6px;
     border: 1px solid <<colour tiddler-border>>;
     border-radius: 3px;
     font-size: 0.9em;
+    box-sizing: border-box;
+    width: 100%;
 }
 .rr-mindmap-slide-edit-buttons {
     display: flex;
@@ -377,13 +381,6 @@ type: text/vnd.tiddlywiki
     background: <<colour primary>>;
     color: <<colour background>>;
     border: 1px solid <<colour primary>>;
-    border-radius: 3px;
-    padding: 4px 12px;
-    cursor: pointer;
-}
-.rr-mindmap-slide-cancel-btn {
-    background: <<colour tiddler-background>>;
-    border: 1px solid <<colour tiddler-border>>;
     border-radius: 3px;
     padding: 4px 12px;
     cursor: pointer;

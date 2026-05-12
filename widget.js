@@ -66,7 +66,8 @@ function MindmapWidget(parseTreeNode, options) {
     // clicks a node title in the playlist. Resolves the title back to a
     // producer node-id and asks the engine to focus/highlight it.
     this.addEventListeners([
-        { type: "rr-mindmap-select-node-by-title", handler: "handleSelectNodeByTitle" }
+        { type: "rr-mindmap-select-node-by-title", handler: "handleSelectNodeByTitle" },
+        { type: "rr-mindmap-add-slide", handler: "handleAddSlide" }
     ]);
 }
 
@@ -975,9 +976,10 @@ MindmapWidget.prototype.reproduce = function () {
 };
 
 // Forward refresh to the preview-pane widget tree so it picks up changes to
-// the selected tiddler (body, slides field, edit-state, inspect-mode). Called
-// from refresh() before each early return — otherwise reproduce()/recompose()
-// would short-circuit propagation and leave the right pane stale.
+// the selected tiddler (body, slide tiddlers under it, edit state, inspect-
+// mode). Called from refresh() before each early return — otherwise
+// reproduce() / recompose() would short-circuit propagation and leave the
+// right pane stale.
 MindmapWidget.prototype.forwardPreviewRefresh = function (changedTiddlers) {
     if (this.previewWidget) {
         try { this.previewWidget.refresh(changedTiddlers); } catch (e) { /* ignore */ }
@@ -1071,6 +1073,11 @@ MindmapWidget.prototype.refresh = function (changedTiddlers) {
         // them: modebar dropdown (active presentation may have changed),
         // pane visibility, action panel toggle button. The preview widget
         // tree picks up field-level changes reactively via $let bindings.
+        // refreshPresentationUI first so the dropdown re-populates with any
+        // newly-created presentation tiddler BEFORE updateModebarSelectedValue
+        // tries to select it — otherwise the new "pres:<title>" option doesn't
+        // exist yet and the dropdown falls back to "body".
+        this.refreshPresentationUI(changedTiddlers);
         this.updateModebarSelectedValue();
         this.updateActionsVisibility();
         this.updatePreviewPaneVisibility();
@@ -1114,11 +1121,11 @@ MindmapWidget.prototype.refresh = function (changedTiddlers) {
         try { this.reproduce(); } catch (e) {
             console.error("[$mindmap] re-produce failed", e);
         }
-        // CRITICAL: forward to preview even after reproduce. Slides-field
-        // writes land on a watched tiddler, which triggers baseChanged → we
-        // reproduce the MDOM (engine label may change) AND must still nudge
-        // the preview pane so the slide list / slide cards re-read the
-        // updated slides field. Without this the right pane goes stale until
+        // CRITICAL: forward to preview even after reproduce. mm.slide-order
+        // writes on the owner (slide add / move / remove) land on a watched
+        // tiddler, which triggers baseChanged → we reproduce the MDOM AND
+        // must still nudge the preview pane so the slide list re-evaluates
+        // `[<owner>mm-slides[]]`. Without this the right pane goes stale until
         // an unrelated refresh (e.g. selecting a different tiddler).
         this.forwardPreviewRefresh(changedTiddlers);
         return true;
@@ -1391,6 +1398,23 @@ MindmapWidget.prototype.handleStepOut = function () {
     this.wiki.addTiddler(new $tw.Tiddler({
         title: this.focusStateTitle(),
         text: ""
+    }));
+};
+
+// Handler for the rr-mindmap-add-slide custom message dispatched from the
+// "+ Add slide" button in the slide pane. Creates a new blank slide tiddler
+// under `paramObject.owner` and writes the new slide's title to the slide-
+// editing state so it opens in edit mode immediately (user just types).
+MindmapWidget.prototype.handleAddSlide = function (event) {
+    var owner = event && event.paramObject && event.paramObject.owner;
+    if (!owner) { return; }
+    var slideTiddlers = require("$:/plugins/rimir/mindmap/lib/slide-tiddlers.js");
+    var newTitle = slideTiddlers.addSlide(this.wiki, owner);
+    if (!newTitle) { return; }
+    var key = this.previewStateKey();
+    this.wiki.addTiddler(new $tw.Tiddler({
+        title: "$:/state/rimir/mindmap/" + key + "/slide-editing",
+        text: newTitle
     }));
 };
 

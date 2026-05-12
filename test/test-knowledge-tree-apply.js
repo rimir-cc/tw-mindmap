@@ -67,6 +67,83 @@ describe("mindmap-knowledge-tree-apply", function () {
         });
     });
 
+    describe("produce — slide exclusion", function () {
+        it("excludes slide tiddlers from the area tree (v0.2.7+)", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/foo", "kn.type": "note", text: "owner body" },
+                { title: "knowledge/llm/foo/slides/slide-1",
+                  "kn.type": "slide",
+                  tags: "$:/tags/rimir/mindmap/slide",
+                  "mm.slide-of": "knowledge/llm/foo",
+                  text: "slide body" }
+            ]));
+            var mdom = producer.produce({ area: "llm" }, wiki);
+            // Walk the MDOM and collect tiddler-bearing node titles.
+            var titles = [];
+            function walk(node) {
+                if (node.attrs && node.attrs["core:tiddler"]) {
+                    titles.push(node.attrs["core:tiddler"]);
+                }
+                (node.children || []).forEach(walk);
+            }
+            walk(mdom.root);
+            expect(titles).toContain("knowledge/llm/foo");
+            // Slide tiddler must NOT appear as its own node.
+            expect(titles).not.toContain("knowledge/llm/foo/slides/slide-1");
+        });
+    });
+
+    describe("refreshFilter — slide exclusion", function () {
+        // Slides change frequently (every keystroke in the body $edit-text).
+        // The producer's refreshFilter must NOT include slide-tagged tiddlers,
+        // or we'd trigger a wasteful tree-reproduce on every slide-body
+        // character.
+        it("excludes slide-tagged tiddlers from the watched set (area mode)", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/foo", "kn.type": "note" },
+                { title: "knowledge/llm/foo/slides/slide-1",
+                  "kn.type": "slide",
+                  tags: "$:/tags/rimir/mindmap/slide" }
+            ]));
+            var filter = producer.refreshFilter({ area: "llm" });
+            expect(filter).toBeTruthy();
+            var watched = wiki.filterTiddlers(filter);
+            expect(watched).toContain("knowledge/llm/foo");
+            expect(watched).not.toContain("knowledge/llm/foo/slides/slide-1");
+        });
+
+        it("excludes slide-tagged tiddlers in forest mode (include-areas-root)", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/foo", "kn.type": "note" },
+                { title: "knowledge/llm/foo/slides/slide-1",
+                  "kn.type": "slide",
+                  tags: "$:/tags/rimir/mindmap/slide" }
+            ]));
+            var filter = producer.refreshFilter({ "include-areas-root": "yes" });
+            expect(filter).toBeTruthy();
+            var watched = wiki.filterTiddlers(filter);
+            expect(watched).toContain("knowledge/llm/foo");
+            expect(watched).not.toContain("knowledge/llm/foo/slides/slide-1");
+        });
+
+        it("excludes slide-tagged tiddlers when focused on a subtree", function () {
+            var wiki = setupWiki(areaSeed().concat([
+                { title: "knowledge/llm/foo", "kn.type": "note" },
+                { title: "knowledge/llm/foo/bar", "kn.type": "note" },
+                { title: "knowledge/llm/foo/bar/slides/slide-1",
+                  "kn.type": "slide",
+                  tags: "$:/tags/rimir/mindmap/slide" }
+            ]));
+            var filter = producer.refreshFilter({
+                area: "llm",
+                "focus-title": "knowledge/llm/foo"
+            });
+            var watched = wiki.filterTiddlers(filter);
+            expect(watched).toContain("knowledge/llm/foo/bar");
+            expect(watched).not.toContain("knowledge/llm/foo/bar/slides/slide-1");
+        });
+    });
+
     describe("rename", function () {
         it("renames a leaf tiddler with the sanitised slug", function () {
             var wiki = setupWiki(areaSeed().concat([

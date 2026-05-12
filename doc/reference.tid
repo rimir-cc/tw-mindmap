@@ -111,25 +111,21 @@ The adapter SHOULD:
 |!Operator |!Returns |
 |`[mindmap-engines[]]` |Names of all registered `mindmapengine` modules |
 |`[mindmap-producers[]]` |Names of all registered `mindmap-producer` modules |
-|`[<text>mm-slide-count[]]` |Number of slides in a `slides`-field text |
-|`[<text>mm-slide-parse[]]` |JSON array of `{layout, notes, content}` slide objects |
-|`[<text>mm-slide-get<idx>,[field]]` |Field value of slide `idx` (`content`, `layout`, or `notes`) |
-|`[<text>mm-slide-update<idx>,<content>,<layout>,<notes>]` |New serialized text with slide `idx` updated |
-|`[<text>mm-slide-insert<idx>]` |New text with a blank slide inserted at `idx` |
-|`[<text>mm-slide-remove<idx>]` |New text with slide `idx` removed |
-|`[<text>mm-slide-move<idx>,<delta>]` |New text with slide `idx` moved by `delta` positions |
+|`[<owner>mm-slides[]]` |Ordered slide tiddler titles for the given owner (reads `mm.slide-order`; stale entries dropped) |
+|`[<owner>mm-slide-count[]]` |Number of slides on the given owner |
+|`[<owner>mm-has-slides[]]` |`yes` / `no` — does this owner have at least one slide |
 |`[mm-presentations<viewTitle>]` |Titles of presentation tiddlers (tag `$:/tags/rimir/mindmap/presentation`) whose `mm.view` matches the operand |
 
 !! Widgets
 
 |!Tag |!Purpose |
 |`<$mindmap>` |The mindmap canvas + preview pane. See attribute table above. |
-|`<$mm-slide-content text="…" layout="…"/>` |Renders the supplied text as wikitext inside a layout-classed div. Used by the slide pane to live-render slide cards. |
 
 !! Tag conventions
 
 |!Tag |!Purpose |
 |`$:/tags/rimir/mindmap/presentation` |Marks a tiddler as a presentation playlist. Required fields: `mm.view` (associated view), `mm.slides-order` (ordered TW list of member tiddler titles). Optional: `mm.transition`, `mm.duration`, `caption` (for the toolbar dropdown label) |
+|`$:/tags/rimir/mindmap/slide` |Marks a tiddler as one slide of an owning knowledge node (v0.2.7+). Stored at `<owner>/slides/<slug>`. Required fields: `kn.type=slide`, `mm.slide-of=<owner-title>`, body as `text`. Optional: `caption`, `mm.slide-layout` (`default`/`title`/`bullets`/...), `mm.slide-notes`. The owner's `mm.slide-order` TW list field drives display order |
 
 !! Config tiddlers
 
@@ -145,11 +141,8 @@ The adapter SHOULD:
 |!Tiddler |!Purpose |
 |`$:/state/rimir/mindmap/<key>/focus-title` |Currently focused subtree (session-only — `$:/state/` doesn't sync) |
 |`$:/state/rimir/mindmap/<key>/label-field` |Session override for the visible-label field |
-|`$:/state/rimir/mindmap/<key>/inspect-mode` |`body` (default) or `slides` — controls what the preview pane renders |
-|`$:/state/rimir/mindmap/<key>/slide-editing` |Index of the slide currently being edited (empty = list view) |
-|`$:/state/rimir/mindmap/<key>/slide-buffer-content` |Edit buffer for the active slide's content |
-|`$:/state/rimir/mindmap/<key>/slide-buffer-layout` |Edit buffer for the active slide's layout |
-|`$:/state/rimir/mindmap/<key>/slide-buffer-notes` |Edit buffer for the active slide's notes |
+|`$:/state/rimir/mindmap/<key>/inspect-mode` |`body` (default), `slides`, or `presentation` — controls what the preview pane renders |
+|`$:/state/rimir/mindmap/<key>/slide-editing` |Title of the slide tiddler currently being edited inline (empty = list view) |
 |`$:/state/rimir/mindmap/<key>/preview-selected` |Currently selected node id (for the preview pane) |
 |`$:/state/rimir/mindmap/<key>/preview-edit-mode` |`yes` while the preview is in inline-edit mode |
 |`$:/state/rimir/mindmap/pending-cascade` |JSON of the deferred op + count + widget key |

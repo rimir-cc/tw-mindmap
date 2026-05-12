@@ -32,6 +32,10 @@ var PRODUCER_NAME = "knowledge-tree";
 var ID_PREFIX = "kt:";
 var TYPES_TIDDLER = "$:/config/rimir/knowledge-app/types";
 var AREA_TAG = "$:/tags/rimir/knowledge-app/area";
+// Slide tiddlers (mindmap v0.2.7+) live under "<owner>/slides/<slug>" and
+// carry this tag. They are content owned by their parent node, not structural
+// nodes in the tree — exclude them from the producer's enumeration filter.
+var SLIDE_TAG = "$:/tags/rimir/mindmap/slide";
 // IDs starting with __ are synthetic roots that don't correspond to any
 // real tiddler (e.g. "__knowledge__" forest root, "__empty__", "__root__").
 function isSyntheticId(id) {
@@ -193,7 +197,7 @@ exports.produce = function (args, wiki) {
             var area = areas[i];
             if (!area.id) { continue; }
             var areaPrefix = "knowledge" + delimiter + area.id + delimiter;
-            var titles = wiki.filterTiddlers("[all[shadows+tiddlers]prefix[" + areaPrefix + "]]");
+            var titles = wiki.filterTiddlers("[all[shadows+tiddlers]prefix[" + areaPrefix + "]!tag[" + SLIDE_TAG + "]]");
             var areaRoot = filterTree._buildTree(titles, {
                 delimiter: delimiter,
                 _rootPrefix: ["knowledge", area.id],
@@ -251,7 +255,7 @@ exports.produce = function (args, wiki) {
         prefix = areaPrefix + delimiter;
     }
 
-    var titles = wiki.filterTiddlers("[all[shadows+tiddlers]prefix[" + prefix + "]]");
+    var titles = wiki.filterTiddlers("[all[shadows+tiddlers]prefix[" + prefix + "]!tag[" + SLIDE_TAG + "]]");
 
     // For the focused-subtree case we pick a label from the focus tiddler's
     // caption (or its leaf segment if no caption). For area-level view we
@@ -562,16 +566,18 @@ exports.refreshFilter = function (args) {
     var delimiter = args.delimiter || "/";
     if (args["include-areas-root"] === "yes" || args["include-areas-root"] === true) {
         // Any tiddler under knowledge/<area>/ AND area-tagged tiddlers.
-        return "[all[shadows+tiddlers]prefix[knowledge" + delimiter + "]] [all[shadows+tiddlers]tag[" + AREA_TAG + "]] [[" + TYPES_TIDDLER + "]]";
+        // Slide tiddlers excluded — they don't affect tree shape, only the
+        // owner's mm.slide-order field (which lives ON the owner and is
+        // already covered). Watching them would trigger wasteful reproduces
+        // on every slide-body keystroke.
+        return "[all[shadows+tiddlers]prefix[knowledge" + delimiter + "]!tag[" + SLIDE_TAG + "]] [all[shadows+tiddlers]tag[" + AREA_TAG + "]] [[" + TYPES_TIDDLER + "]]";
     }
     var areaId = trim(args.area || "");
     if (!areaId) { return null; }
     var areaPrefix = "knowledge" + delimiter + areaId;
     var focusTitle = trim(args["focus-title"] || "");
-    // When focused on a deeper subtree, narrow the watched set to that
-    // subtree (+ the focus tiddler itself + types registry).
     if (focusTitle && (focusTitle === areaPrefix || focusTitle.indexOf(areaPrefix + delimiter) === 0)) {
-        return "[all[shadows+tiddlers]prefix[" + focusTitle + delimiter + "]] [[" + focusTitle + "]] [[" + TYPES_TIDDLER + "]]";
+        return "[all[shadows+tiddlers]prefix[" + focusTitle + delimiter + "]!tag[" + SLIDE_TAG + "]] [[" + focusTitle + "]] [[" + TYPES_TIDDLER + "]]";
     }
-    return "[all[shadows+tiddlers]prefix[" + areaPrefix + delimiter + "]] [[" + TYPES_TIDDLER + "]]";
+    return "[all[shadows+tiddlers]prefix[" + areaPrefix + delimiter + "]!tag[" + SLIDE_TAG + "]] [[" + TYPES_TIDDLER + "]]";
 };

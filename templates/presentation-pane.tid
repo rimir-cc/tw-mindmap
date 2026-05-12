@@ -7,7 +7,7 @@ tags: $:/tags/Macro
 
 <$list filter="[<presentationTitle>is[blank]]" variable="_">
 <div class="rr-mindmap-presentation-empty">
-No active presentation. Use the toolbar dropdown above the canvas to pick or create one.
+No active presentation. Use the dropdown above to pick or create one.
 </div>
 </$list>
 
@@ -21,8 +21,7 @@ No active presentation. Use the toolbar dropdown above the canvas to pick or cre
 </div>
 
 <$list filter="[enlist<nodesList>]" variable="nodeTitle" emptyMessage="""<div class='rr-mindmap-presentation-empty'>No nodes added yet. Select a node in the canvas and click "+ Add to presentation" in the bottom-right panel.</div>""">
-<$let nodeSlidesText={{{ [<nodeTitle>get[slides]] }}}
-      nodeSlideCount={{{ [<nodeSlidesText>mm-slide-count[]] }}}
+<$let nodeSlideCount={{{ [<nodeTitle>mm-slide-count[]] }}}
       isSelected={{{ [<previewTitle>match<nodeTitle>] }}}>
 <div class={{{ [[rr-mindmap-presentation-node]] [<isSelected>!is[blank]then[rr-mindmap-presentation-node-selected]] +[join[ ]] }}}>
 <div class="rr-mindmap-presentation-node-header">
@@ -32,14 +31,15 @@ No active presentation. Use the toolbar dropdown above the canvas to pick or cre
 </$button>
 <span class="rr-mindmap-presentation-node-meta"><$text text=<<nodeSlideCount>>/> slide<$list filter="[<nodeSlideCount>!match[1]]" variable="_">s</$list></span>
 </div>
-<$list filter="[range<nodeSlideCount>]" variable="oneIdx" emptyMessage="""<div class='rr-mindmap-presentation-node-empty'>(no slides on this node)</div>""">
-<$let idx={{{ [<oneIdx>subtract[1]] }}}
-      content={{{ [<nodeSlidesText>mm-slide-get<idx>,[content]] }}}
-      layout={{{ [<nodeSlidesText>mm-slide-get<idx>,[layout]] }}}>
+<$list filter="[<nodeTitle>mm-slides[]]" variable="slideTitle" counter="oneIdx" emptyMessage="""<div class='rr-mindmap-presentation-node-empty'>(no slides on this node)</div>""">
+<$let layout={{{ [<slideTitle>get[mm.slide-layout]] }}}
+      caption={{{ [<slideTitle>get[caption]] }}}
+      leafTitle={{{ [<slideTitle>split[/]last[]] }}}
+      displayName={{{ [<caption>!is[blank]] ~[<leafTitle>] }}}>
 <div class="rr-mindmap-presentation-slide">
-<div class="rr-mindmap-presentation-slide-label">Slide <$text text=<<oneIdx>>/> · <em><$text text=<<layout>>/></em></div>
-<div class="rr-mindmap-presentation-slide-body">
-<$mm-slide-content text=<<content>> layout=<<layout>>/>
+<div class="rr-mindmap-presentation-slide-label">Slide <$text text=<<oneIdx>>/> · <em><$text text=<<displayName>>/></em> · <span class="rr-mindmap-presentation-slide-layout"><$text text=<<layout>>/></span></div>
+<div class={{{ [[rr-mindmap-presentation-slide-body rr-mindmap-slide-content-]] +[addsuffix<layout>] }}}>
+<$transclude $tiddler=<<slideTitle>> $mode="block"/>
 </div>
 </div>
 </$let>

@@ -140,17 +140,52 @@ The mind-elixir adapter advertises `capabilities.applyOps = false` — the widge
 # `$:/config/rimir/mindmap/default-engine`
 # First registered `mindmapengine` module (alphabetical iteration order)
 
-!! Slide authoring (Phase 1) — orthogonal fourth axis
+!! Slide authoring — orthogonal fourth axis
 
-Three things were orthogonal at v0.2.3 — structural source (producer), visible label (label-field), per-view overlay (collapse / reorder / hide ops). v0.2.4 adds a fourth: ''per-tiddler slide content''.
+Three things were orthogonal at v0.2.3 — structural source (producer), visible label (label-field), per-view overlay (collapse / reorder / hide ops). v0.2.4 introduced a fourth: ''per-node slide content''. v0.2.7 rewrote it from a single `slides` field into first-class slide tiddlers — the design constraints (per-slide timestamps, comments, search, rename-cascade) made the field model insufficient.
 
-* Storage: a single `slides` field on the tiddler. Wikitext slices separated by lines of exactly `===`. Each slice may begin with `!! layout: <name>` and `!! notes: <text>` directives followed by a blank line and the body.
-* No producer involvement: the `slides` field is tiddler-owned. A producer's MDOM neither inflates nor projects slides — they're read straight from `wiki.getTiddler(title)` by the slide pane in the preview.
-* No overlay involvement: edits write back to the `slides` field directly (no op log). The overlay still serves visual ops (`hide`, `setAttr`, `reorder`) regardless of slide state.
-* The preview pane carries a small modebar above its content: the selected tiddler title on the left, an inspect-mode dropdown ("Body" / "Slides") on the right. Switching to Slides swaps the body view/edit for a slide list with per-slide add/edit/move/delete controls. The dropdown is bound directly to `$:/state/rimir/mindmap/<key>/inspect-mode` via `<$select tiddler=…>`, so changes propagate through the existing widget refresh without JS-side bookkeeping. (The label-field dropdown stays in the canvas actions panel because it controls canvas labels, not the preview.)
-* `lib/parse-slides.js` is pure JS (parse / serialize / update / insert / remove / move). Filter operators in `filters/slides.js` expose these to wikitext. A small `$mm-slide-content` widget renders slide text as wikitext so cards live-render rather than show source.
+''Slide tiddler shape:''
 
-!!! Named presentations (Phase 2)
+|!Field |!Value |
+|title |`<owner-title>/slides/<slug>` (e.g. `knowledge/llm/foo/slides/slide-1`) |
+|`kn.type` |`slide` |
+|tags |`$:/tags/rimir/mindmap/slide` (canonical marker; used by producer exclusion) |
+|`mm.slide-of` |Owner tiddler title (back-reference; cascades on owner-rename via flibbles/relink-titles) |
+|`mm.slide-layout` |`default` / `title` / `bullets` / any custom CSS class |
+|`mm.slide-notes` |Single-line presenter notes |
+|caption |Optional display name shown in the slide list |
+|text |Slide body — plain wikitext, rendered via `<$transclude>` |
+
+''Owner field:''
+
+|!Field |!Value |
+|`mm.slide-order` |TW list of slide tiddler titles in display / playback order |
+
+''Why tiddlers, not a single `slides` field:''
+
+* Each slide has its own `created` / `modified` — you can sort, search, audit per slide.
+* Title-based identity → `flibbles/relink-titles` automatically renames the entire `<owner>/slides/<*>` subtree when the owner is renamed. The field model couldn't survive a rename of `knowledge/llm/foo`.
+* Slide bodies become regular wikitext tiddlers — full search visibility, links cascade like any other tiddler, comments / tags / further fields can live on each slide independently.
+
+''Producer exclusion:''
+
+* The `knowledge-tree` producer's enumeration filter ends with `!tag[$:/tags/rimir/mindmap/slide]`, so slides never appear as nodes in the tree — only their owners do.
+* The producer's `refreshFilter` also excludes slides, so editing a slide body doesn't trigger a wasteful tree-reproduce (the owner's `mm.slide-order` is what changes when slides are added/removed/moved, and the owner IS in the watched set).
+
+''Pane composition:''
+
+* The preview pane carries a modebar above its content: the selected tiddler title on the left, a unified dropdown on the right with `Body / Slides / <each presentation>  / + New presentation…`.
+* Slide pane (`templates/slide-pane.tid`) walks `[<previewTitle>mm-slides[]]`, renders one card per slide. Edit mode is inline — each field uses `<$edit-text tiddler=<slide-title> field="...">` so keystrokes write through. No buffer state.
+* `+ Add slide` dispatches the `rr-mindmap-add-slide` widget message; the widget creates a blank slide tiddler via `lib/slide-tiddlers.addSlide()` and writes the new title to `$:/state/rimir/mindmap/<key>/slide-editing` so the new slide opens in edit mode immediately.
+* Up / Down / Delete in the slide card are pure wikitext: `<$action-listops>` on the owner's `mm.slide-order` (using the `move:N` / `-` operators), plus `<$action-deletetiddler>` for delete.
+
+''Filter operators:''
+
+* `[<owner>mm-slides[]]` — ordered slide titles.
+* `[<owner>mm-slide-count[]]` — count.
+* `[<owner>mm-has-slides[]]` — `yes` / `no`. Used by the (Phase 3B) slides-only view to prune nodes without slides.
+
+!!! Named presentations
 
 A presentation is a ''playlist'': a tiddler tagged `$:/tags/rimir/mindmap/presentation` with `mm.view` (the view it belongs to) and `mm.slides-order` (a TW list of member tiddler titles). The view's `mm.presentation` field names the currently-active presentation — durable, so the choice survives reloads.
 
@@ -158,7 +193,7 @@ A presentation is a ''playlist'': a tiddler tagged `$:/tags/rimir/mindmap/presen
 * Storage: tiddler titles (not producer node-ids). Stable across producer swaps — only tiddler renames can break references (and Phase 3 will register the field with flibbles/relink for rename cascade).
 * UI surfaces are colocated with the right pane (since "what does the right pane show?" is the question the dropdown answers): the preview-pane modebar dropdown unifies mode + presentation picking — options are Body / Slides / each presentation for the view / + New presentation… in an optgroup. The bottom-right actions panel gets a `+/−` toggle for selected-node membership in the active presentation. Clicking a node title in the playlist dispatches `rr-mindmap-select-node-by-title`; the widget resolves it via the producer's new `idForTitle` helper and calls `engine.focus()` to centre+select on the canvas.
 
-Phase 3 will add the ''presentation creation mode'' (visual fading of non-included nodes on the canvas, drag-to-reorder of slides-order, per-slide transition overrides) and the ''fullscreen player'' (sequential walk with keyboard navigation).
+Phase 3B will add a ''slides-only view'' (prune nodes whose `mm-has-slides` is `no`, leaving only the presentation-eligible spine of the knowledge tree). Phase 3C will add the ''fullscreen player'' (sequential walk with keyboard navigation) and the ''presentation creation mode'' (visual fading of non-included nodes, drag-to-reorder, per-slide overrides).
 
 !! What this is NOT
 

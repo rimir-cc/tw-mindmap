@@ -20,7 +20,7 @@ The `flibbles/graph` widget uses declarative `<$node>`/`<$edge>` children — gr
 Three reasons:
 * ''Multiple views over the same data'' — a single tiddler can appear in many mindmaps, each with its own layout.
 * ''Derived structures that don't reflect the underlying domain'' — the user may want to group nodes for a presentation purpose without changing what the data "really" means in the wiki.
-* ''Forward compatibility with slide mode'' — v2 slides are just named overlays; the v1 overlay machinery is the prototype.
+* ''Named presentations'' — a presentation is a separate tiddler with its own `mm.slides-order` referencing nodes from the view. Multiple presentations can target the same view independently of the overlay.
 
 !! What happens if a tiddler is renamed?
 
