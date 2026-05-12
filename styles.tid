@@ -1,0 +1,187 @@
+title: $:/plugins/rimir/mindmap/styles
+tags: $:/tags/Stylesheet
+type: text/vnd.tiddlywiki
+
+/* Container for the $mindmap widget. Engines render into a child div with
+   class .rr-mindmap-canvas; the canvas needs a definite height to render. */
+.rr-mindmap {
+    position: relative;
+    width: 100%;
+    min-height: 240px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Horizontal layout under the toolbar: canvas on the left, preview pane
+   (when a node is selected) on the right. */
+.rr-mindmap-main {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: row;
+    min-height: 0;
+}
+
+.rr-mindmap-canvas {
+    flex: 1 1 auto;
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+    position: relative;
+}
+
+.rr-mindmap-preview {
+    flex: 0 0 35%;
+    max-width: 35%;
+    height: 100%;
+    overflow: auto;
+    padding: 12px 16px;
+    border-left: 1px solid var(--theme-tiddler-border, #e0e0e0);
+    background: var(--theme-tiddler-background, transparent);
+    font-size: 0.95em;
+}
+.rr-mindmap-preview-header {
+    font-family: var(--theme-monospace-font, monospace);
+    font-size: 0.8em;
+    opacity: 0.7;
+    margin-bottom: 8px;
+    word-break: break-all;
+}
+.rr-mindmap-preview-body {
+    line-height: 1.5;
+}
+.rr-mindmap-preview-body .rr-text-view-editable {
+    cursor: text;
+}
+.rr-mindmap-preview-edit {
+    display: flex;
+    flex-direction: column;
+}
+.rr-mindmap-preview-edit .tc-edit-texteditor {
+    min-height: 220px;
+    width: 100%;
+}
+
+.rr-mindmap-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    padding: 0.25em 0.4em;
+    font-size: 0.85em;
+    border-bottom: 1px solid var(--theme-tiddler-border, #e0e0e0);
+    background: var(--theme-tiddler-background, transparent);
+}
+
+.rr-mindmap-toolbar .rr-mindmap-engine,
+.rr-mindmap-toolbar .rr-mindmap-producer {
+    opacity: 0.65;
+    font-family: var(--theme-monospace-font, monospace);
+}
+
+/* Cascade-confirm modal. Self-contained: defines its own page-darkening +
+   centering layer (does NOT rely on kn-modal-overlay cascade) so a missing
+   knowledge-app stylesheet or a CSS load-order race can't leave the card
+   underneath the dim wash. */
+.rr-mindmap-cascade-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9001;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    isolation: isolate;
+}
+.rr-mindmap-cascade-modal {
+    position: relative;
+    z-index: 1;
+    max-width: 460px;
+    width: 90vw;
+    background: <<colour tiddler-background>>;
+    color: <<colour foreground>>;
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+.rr-mindmap-cascade-modal-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid <<colour tiddler-border>>;
+    background: <<colour message-background>>;
+}
+.rr-mindmap-cascade-modal-body {
+    padding: 16px;
+    line-height: 1.5;
+}
+.rr-mindmap-cascade-modal-body > div {
+    margin-bottom: 0.6em;
+}
+.rr-mindmap-cascade-modal-body > div:last-child {
+    margin-bottom: 0;
+}
+.rr-mindmap-cascade-modal-hint {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+.rr-mindmap-cascade-modal-actions {
+    padding: 12px 16px;
+    border-top: 1px solid <<colour tiddler-border>>;
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+/* Floating bottom-right action panel — matches the visual style of
+   mind-elixir's own built-in toolbars (.mind-elixir-toolbar.rb). We add it
+   above mind-elixir's bottom-right zoom panel so the two stack vertically. */
+.rr-mindmap-actions {
+    position: absolute;
+    right: 20px;
+    bottom: 80px;
+    z-index: 50;
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    background: var(--theme-tiddler-background, #fff);
+    color: var(--theme-foreground, #333);
+    border-radius: 5px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.rr-mindmap-edit-btn {
+    min-width: 28px;
+    height: 24px;
+    padding: 0 0.5em;
+    font-size: 1.1em;
+    line-height: 1;
+    border: 1px solid var(--theme-tiddler-border, #d0d0d0);
+    background: var(--theme-tiddler-background, transparent);
+    color: inherit;
+    border-radius: 3px;
+    cursor: pointer;
+}
+.rr-mindmap-edit-btn:hover:not(:disabled) {
+    background: var(--theme-foreground, #000);
+    color: var(--theme-background, #fff);
+}
+.rr-mindmap-edit-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.rr-mindmap-orphan-badge {
+    margin-left: auto;
+    color: var(--theme-message-warning-color, #b06000);
+    cursor: help;
+}
+
+.rr-mindmap-error {
+    padding: 1em;
+    border: 1px solid var(--theme-message-error-border, #b04040);
+    background: var(--theme-message-error-background, #fff0f0);
+    color: var(--theme-message-error-color, #800000);
+    font-family: var(--theme-monospace-font, monospace);
+    white-space: pre-wrap;
+}
+
+/* Fix TW's auto-<p> wrapping when $mindmap is invoked via $transclude $mode="block".
+   Same pattern as cytoscape-engine. */
+.rr-mindmap > p { display: contents; margin: 0; }

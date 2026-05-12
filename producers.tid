@@ -1,0 +1,75 @@
+title: $:/plugins/rimir/mindmap/producers
+type: text/vnd.tiddlywiki
+
+! Producers
+
+A ''producer'' is a `module-type: mindmap-producer` JS module that turns wiki data into a base MDOM document. Built-in producers cover the common cases; custom producers can be added in any plugin that registers a module of this type.
+
+!! Built-in producers
+
+!!! filter-tree
+
+Title-path segmentation of any filter result.
+
+|!Argument |!Default |!Purpose |
+|`filter` |(required) |TW filter expression returning titles to include |
+|`delimiter` |`/` |Path separator used for tree segmentation |
+|`root-label` |`Mindmap` |Label for the synthetic root |
+|`body-field` |`text` |Tiddler field shown as MDOM node body |
+
+Used implicitly by the `<$mindmap filter="..."/>` quick form. Node IDs are prefixed `ft:`.
+
+!!! knowledge-tree
+
+Renders a `rimir/knowledge-app` area as a mindmap. Enriches nodes with type icons (from `kn.type`) and area colour.
+
+|!Argument |!Default |!Purpose |
+|`area` |(required) |Area id (e.g. `llm`, `health`) |
+|`delimiter` |`/` |Path separator |
+|`include-areas-root` |`no` |If `yes`, renders a forest of all areas (ignores `area`) |
+
+Node IDs are prefixed `kt:`.
+
+!!! json
+
+Reads MDOM verbatim from a tiddler's text field.
+
+|!Argument |!Default |!Purpose |
+|`tiddler` |(required) |Title of a tiddler whose text is valid MDOM JSON |
+
+!! Installed producers (all sources)
+
+<$list filter="[mindmap-producers[]]">
+* <<currentTiddler>>
+</$list>
+
+!! Writing a custom producer
+
+Create a JS module with header:
+
+```
+title: $:/your-plugin/producers/my-producer.js
+type: application/javascript
+module-type: mindmap-producer
+```
+
+Export the following:
+
+```
+exports.name = "my-producer";
+exports.produce = function (args, wiki) {
+    return {
+        version: 1,
+        root: { id: "mine:root", label: "...", children: [...] },
+        meta: { producer: "my-producer", producedAt: Date.now() }
+    };
+};
+exports.refreshFilter = function (args) {
+    return "[your-filter-here]";   // optional; widget re-projects when matching tiddlers change
+};
+exports.describe = function () {
+    return { name: "my-producer", args: [...] };
+};
+```
+
+Node IDs SHOULD be stable across renders and prefixed with a namespace unique to your producer.

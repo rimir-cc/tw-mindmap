@@ -1,0 +1,86 @@
+title: $:/plugins/rimir/mindmap/settings
+type: text/vnd.tiddlywiki
+
+! Settings
+
+!! Default engine
+
+When a `$mindmap` widget does not specify `engine=` and the view tiddler does not set `mm.engine`, the widget falls back to this config tiddler. If empty, the first registered `mindmapengine` module is used.
+
+|!Tiddler |`$:/config/rimir/mindmap/default-engine` |
+|!Value |Engine name (e.g. `MindElixir`) |
+
+''Current value:''
+<$edit-text tiddler="$:/config/rimir/mindmap/default-engine" tag="input" default="" placeholder="(first registered engine)"/>
+
+!! Engine selection precedence
+
+# Widget attribute: `<$mindmap engine="..."/>`
+# View tiddler field: `mm.engine`
+# Config tiddler above
+# First registered `mindmapengine` module
+
+!! Installed engines
+
+<$list filter="[mindmap-engines[]]" emptyMessage="''No engines installed.'' Install a companion plugin such as `rimir/mindmap-elixir`.">
+* <<currentTiddler>>
+</$list>
+
+!! Installed producers
+
+<$list filter="[mindmap-producers[]]" emptyMessage="(none — should not happen if this plugin is loaded)">
+* <<currentTiddler>>
+</$list>
+
+!! Structural editing (write-back to real tiddlers)
+
+When the active producer declares `capabilities.structural: true` (e.g. `knowledge-tree`), drag-reparent / rename / +child / Delete in the mindmap mutate the underlying tiddlers directly. The two settings below tune that behaviour.
+
+!!! Default type for new nodes
+
+When the user creates a node via Tab/Enter, the new tiddler's `kn.type` field is chosen by this strategy:
+
+* `fixed:<type>` — always use the literal type (e.g. `fixed:note`, `fixed:idea`).
+* `derive-from-parent` — read the parent node's `kn.type`. Falls back to the default below when the parent has none.
+
+|!Tiddler |`$:/config/rimir/mindmap/structural/new-node-type-strategy` |
+|!Default |`fixed:note` |
+
+''Current value:''
+<$edit-text tiddler="$:/config/rimir/mindmap/structural/new-node-type-strategy" tag="input" default="fixed:note" placeholder="fixed:note"/>
+
+Quick presets:
+
+* <$button class="rr-link-btn"><$action-setfield $tiddler="$:/config/rimir/mindmap/structural/new-node-type-strategy" text="fixed:note"/>fixed:note</$button>
+* <$button class="rr-link-btn"><$action-setfield $tiddler="$:/config/rimir/mindmap/structural/new-node-type-strategy" text="fixed:idea"/>fixed:idea</$button>
+* <$button class="rr-link-btn"><$action-setfield $tiddler="$:/config/rimir/mindmap/structural/new-node-type-strategy" text="derive-from-parent"/>derive-from-parent</$button>
+
+!!! Cascade-confirm threshold
+
+Reparent / delete / rename operations whose effect spans more than this many descendant tiddlers pop a confirm modal before applying. Set to a very high number to disable the confirmation entirely.
+
+|!Tiddler |`$:/config/rimir/mindmap/structural/cascade-threshold` |
+|!Default |`10` |
+
+''Current value:''
+<$edit-text tiddler="$:/config/rimir/mindmap/structural/cascade-threshold" tag="input" type="number" default="10"/>
+
+!! Overlay tiddler titles and persistence
+
+Drag/rename/collapse changes are stored in the overlay tiddler named by the view's `mm.overlay` field (or the `overlay=` widget attribute). For changes to survive browser reloads and server restarts, that title MUST be //synced to the server// — that is, it MUST match the wiki's `$:/config/SyncFilter`.
+
+The TiddlyWiki core default excludes anything under `$:/state/`, `$:/temp/`, `$:/status/` and `$:/HistoryList`. So:
+
+* `Mindmap/<view>/overlay` — //persists// (regular tiddler, written to disk)
+* `$:/config/rimir/mindmap/overlays/<view>` — //persists// (system but synced)
+* `$:/state/...` — ''lost on reload''. Only use this for ephemeral session state.
+
+If your wiki has a custom `$:/config/SyncFilter`, mirror that here when naming overlays.
+
+!! Overlay write debounce
+
+Overlay tiddler writes are debounced at 250 ms to avoid spamming filesystem-watcher and git-int with every intermediate drag event. This is currently hard-coded; if you need to tune it, file an issue.
+
+!! Restricted-wiki environments
+
+If `llm-connect` or another plugin restricts which tiddlers may be written, overlay tiddler titles MUST be in the protection allow filter or writes will be silently dropped. The widget reflects this with no error — drag changes appear to work in the UI but do not persist after reload.

@@ -1,0 +1,46 @@
+created: 20260511000000000
+modified: 20260511000000000
+rdt.order: 6
+rdt.plugin-key: mindmap
+rdt.plugin-name: mindmap
+rdt.plugin-subtitle: Engine-agnostic mindmap rendering with base + overlay data model
+rdt.section: FAQ
+title: $:/plugins/rimir/mindmap/doc/faq
+type: text/vnd.tiddlywiki
+
+<$transclude $tiddler="$:/plugins/rimir/doc-template/templates/page">
+<$fill $name="body">
+
+!! Why not extend `flibbles/graph` instead?
+
+The `flibbles/graph` widget uses declarative `<$node>`/`<$edge>` children — great for hand-authored graphs, awkward for "give me a mindmap of these tiddlers". Mindmap engines (mind-elixir, markmap, jsmind) take a recursive `{topic, children}` tree and expose tree-shaped runtime APIs (`addChild`, `expand`, `removeNode`). Tree-shaped contracts demand tree-shaped data and tree-shaped ops — a clean separation rather than re-shaping the graph model on every render.
+
+!! Why an overlay instead of writing positions back to the source tiddler?
+
+Three reasons:
+* ''Multiple views over the same data'' — a single tiddler can appear in many mindmaps, each with its own layout.
+* ''Derived structures that don't reflect the underlying domain'' — the user may want to group nodes for a presentation purpose without changing what the data "really" means in the wiki.
+* ''Forward compatibility with slide mode'' — v2 slides are just named overlays; the v1 overlay machinery is the prototype.
+
+!! What happens if a tiddler is renamed?
+
+The producer re-projects with the new title, so the old node id disappears from the base. Overlay ops targeting the old id become ''orphans'' — they remain in the overlay tiddler (your gestures are not silently destroyed) and the widget toolbar shows a count. You can manually edit the overlay JSON or use the `mm.id-aliases` view field to map old id → new id.
+
+!! Can a producer write back to TW data?
+
+Producers are read-only by contract. If you want a write-capable view, expose actions on the host tiddler (via `onSelectActions=`) and let the user trigger them. The widget itself never writes to producer output.
+
+!! Why not use `json-dsl` for producers?
+
+`json-dsl` is a widget-based JSON builder (`<$json-obj>`, `<$json-prop>`, etc.) — useful for hand-authored JSON, but not a filter-to-tree compiler. Producers are JS modules so they can do the segmentation/walking efficiently, and so the engine adapter can call `producer.produce()` synchronously inside `init()` without rendering a widget tree.
+
+!! What if my engine doesn't support a feature like cross-links?
+
+Set `capabilities.applyOps = false` (or omit specific capabilities) and the widget falls back to engine-agnostic behaviour. Unknown attrs in the namespace bag are preserved on round-trip but not visualised — switching to a more capable engine reveals them without data loss.
+
+!! Will there be a visual editor for view tiddlers?
+
+Not in v1. Use the standard TW tiddler editor and set the `mm.*` fields by hand or via a small action button. A view designer is on the roadmap once the contract proves stable.
+
+</$fill>
+</$transclude>

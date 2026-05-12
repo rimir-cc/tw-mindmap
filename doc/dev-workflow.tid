@@ -1,0 +1,69 @@
+created: 20260511000000000
+modified: 20260511000000000
+rdt.order: 5
+rdt.plugin-key: mindmap
+rdt.plugin-name: mindmap
+rdt.plugin-subtitle: Engine-agnostic mindmap rendering with base + overlay data model
+rdt.section: Dev workflow
+title: $:/plugins/rimir/mindmap/doc/dev-workflow
+type: text/vnd.tiddlywiki
+
+<$transclude $tiddler="$:/plugins/rimir/doc-template/templates/page">
+<$fill $name="body">
+
+!! Adding a new producer
+
+# Decide the ''id namespace'' (e.g. `mp:` for "my producer"). All emitted node ids must use this prefix to avoid collisions with other producers.
+# Create `producers/my-producer.js` + `.meta` (`module-type: mindmap-producer`).
+# Implement `exports.produce(args, wiki)` — return MDOM with deterministic ids.
+# (Optional) implement `exports.refreshFilter(args)` — TW filter expression; the widget re-projects when matching tiddlers change.
+# Restart the server — `module-type` registration only happens at boot.
+
+!! Adding a new engine adapter
+
+# Create a separate plugin (e.g. `rimir/mindmap-mermaid`) — engine adapters do NOT belong in the core plugin.
+# Bundle the library as `lib/foo.umd.js` (+ `.meta` with `module-type: library`).
+# Stylesheet as a separate tiddler tagged `$:/tags/Stylesheet`.
+# Implement `adapter.js` per `doc/reference` — must export `name`, `init`, `update`, `destroy`, `on`, `capabilities`.
+# Set `capabilities.applyOps = false` for v1 — the widget will full-update on every change.
+
+!! Map your engine's events to our Op vocabulary
+
+When the user drags a node, your adapter receives a native event. Translate to:
+
+```
+{ op: "reparent", id: nodeId, newParent: parentId }
+```
+
+When a node is renamed:
+
+```
+{ op: "rename", id: nodeId, label: newLabel }
+```
+
+When the user collapses a branch:
+
+```
+{ op: "setAttr", id: nodeId, key: "core:collapsed", value: true }
+```
+
+Always emit via `this.on("op", op)` rather than mutating the MDOM directly. The widget owns the overlay; adapters do not.
+
+!! Testing
+
+* Use ''TestCaseWidget'' fixtures in `test/testcases.tid` for compose / producer round-trips.
+* For engine adapters, prefer a stub adapter that captures `update()` calls to verify the widget's refresh routing.
+* Manual browser tests cover real rendering — the test edition cannot exercise actual library behaviour.
+
+!! Restart rules (rimir convention)
+
+|!Change |!Restart? |
+|JS module added/modified |Yes |
+|Config tiddler edit |No |
+|View tiddler edit |No (widget refresh handles it) |
+|Overlay tiddler edit |No (widget recomposes) |
+|Producer registration |Yes |
+|Engine registration |Yes |
+
+</$fill>
+</$transclude>

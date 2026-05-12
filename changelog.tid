@@ -1,0 +1,10 @@
+created: 20260511000000000
+modified: 20260511000000000
+title: $:/plugins/rimir/mindmap/changelog
+type: text/vnd.tiddlywiki
+
+! Changelog
+
+|!Version |!Date |!Changes |
+|v0.2.0 |2026-05-12 |Structural editing: producers can declare `capabilities.structural`/`structuralOps` and an `applyOps` to write back to real tiddlers; `knowledge-tree` producer rewrites drag-rename / drag-reparent / addNode / removeNode into `wiki.renameTiddler` (flibbles/relink cascades references) + `addTiddler`/`deleteTiddler`. Per-op routing: collapse/setAttr/reorder stay overlay, structural ops mutate the wiki. Cascade-confirm modal for operations exceeding a configurable descendant threshold. Focus mode (drill into a subtree) with ↓ focus-in / ↑ step-out-one / ⇪ step-out-fully buttons in the floating actions panel. Side-by-side preview pane with double-click-to-edit (Ctrl-Enter saves, Esc cancels). F2 / Edit-button opens a popup edit modal with optional title-lock |
+|v0.1.0 |2026-05-11 |Initial release: `$mindmap` widget, canonical MDOM, compose (base + overlay → composite), overlay-store with debounced writes, three built-in producers (filter-tree, knowledge-tree, json), engine discovery via `module-type: mindmapengine`. No engines bundled — install a companion adapter plugin |

@@ -1,0 +1,38 @@
+title: $:/plugins/rimir/mindmap/views
+type: text/vnd.tiddlywiki
+
+! Views
+
+A ''view'' is a tiddler that bundles a producer + arguments + overlay reference + engine preference. The `$mindmap` widget renders a view with `<$mindmap view="ViewTiddlerName"/>`.
+
+!! View fields
+
+|!Field |!Required |!Purpose |
+|`mm.producer` |yes |Name of a registered `mindmap-producer` (e.g. `knowledge-tree`) |
+|`mm.args` |yes |JSON object — arguments passed to the producer |
+|`mm.overlay` |no |Title of the overlay tiddler holding the persistent op log |
+|`mm.engine` |no |Engine name override; falls through to config default |
+|`mm.options` |no |JSON object — engine-specific options |
+|`mm.id-aliases` |no |JSON object mapping old ids to new ids (rename rescue) |
+
+!! Existing views
+
+<$list filter="[has[mm.producer]!is[system]sort[title]]" emptyMessage="No views defined yet.">
+* <$link to=<<currentTiddler>>><<currentTiddler>></$link> — //producer:// {{!!mm.producer}}
+</$list>
+
+!! Creating a view
+
+# Create a new tiddler (any title).
+# Add field `mm.producer` with the name of an installed producer.
+# Add field `mm.args` with a JSON object of arguments.
+# Render with `<$mindmap view="..."/>` anywhere.
+
+Example field values:
+
+```
+mm.producer:  knowledge-tree
+mm.args:      {"area":"llm"}
+mm.overlay:   $:/state/rimir/mindmap/views/my-map/overlay
+mm.engine:    MindElixir
+```

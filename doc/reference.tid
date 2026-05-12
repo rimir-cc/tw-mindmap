@@ -1,0 +1,109 @@
+created: 20260511000000000
+modified: 20260511000000000
+rdt.order: 3
+rdt.plugin-key: mindmap
+rdt.plugin-name: mindmap
+rdt.plugin-subtitle: Engine-agnostic mindmap rendering with base + overlay data model
+rdt.section: Reference
+title: $:/plugins/rimir/mindmap/doc/reference
+type: text/vnd.tiddlywiki
+
+<$transclude $tiddler="$:/plugins/rimir/doc-template/templates/page">
+<$fill $name="body">
+
+!! `<$mindmap>` widget
+
+|!Attribute |!Default |!Purpose |
+|`view` |— |Title of a view tiddler bundling producer + args + overlay + engine |
+|`filter` |— |Quick-form: filter expression projected via the built-in `filter-tree` producer |
+|`engine` |(config / first) |Engine name override |
+|`overlay` |— |Overlay tiddler title (quick form only; view tiddler supplies its own) |
+|`class` |— |Extra CSS class on the container `<div>` |
+|`style` |— |Inline `style` attribute |
+|`height` |— |Numeric height in px or any valid CSS length |
+|`readonly` |`no` |If `yes`, user gestures do not write to the overlay |
+|`state` |— |State-tiddler prefix for engine-internal UI state (reserved) |
+|`onSelectActions` |— |Action string invoked on node selection; receives `<<nodeId>>` |
+
+Setting both `view` and `filter` is a configuration error and renders an error banner.
+
+!! View tiddler fields
+
+|!Field |!Required |!Purpose |
+|`mm.producer` |yes |Name of a registered `mindmap-producer` |
+|`mm.args` |yes (JSON object) |Arguments passed to the producer |
+|`mm.overlay` |no |Overlay tiddler title |
+|`mm.engine` |no |Engine name override |
+|`mm.options` |no (JSON object) |Engine-specific options |
+|`mm.id-aliases` |no (JSON object) |Old-id → new-id rescue map applied before composition |
+
+!! Producer module contract
+
+```
+title: $:/your-plugin/producers/foo.js
+type: application/javascript
+module-type: mindmap-producer
+
+exports.name           = "foo";
+exports.produce        = function (args, wiki, widget) → MDOM;   // required
+exports.refreshFilter  = function (args) → string                // optional
+exports.describe       = function () → { name, args: [...] }    // optional
+```
+
+Producers MUST emit deterministic node IDs (prefixed with a producer-unique namespace). IDs are the join key between base and overlay.
+
+!! Engine adapter contract
+
+```
+title: $:/your-engine/adapter.js
+type: application/javascript
+module-type: mindmapengine
+
+exports.name         = "MindElixir";
+exports.capabilities = { applyOps: false, focus: true, expand: true, drag: true, edit: false };
+exports.init         = function (element, mdom, options);
+exports.update       = function (mdom);
+exports.applyOps     = function (ops);                  // optional
+exports.focus        = function (nodeId);
+exports.expand       = function (nodeId);
+exports.collapse     = function (nodeId);
+exports.on           = function (event, fn);            // events: op, select
+exports.destroy      = function ();
+```
+
+If the adapter exports a constructor (function), the widget calls `new Engine(wiki)`. Otherwise the exported object is used directly.
+
+The adapter MUST:
+* Deep-clone the MDOM before mutating it (some engines like mind-elixir mutate their input).
+* Preserve unknown-namespace `attrs` keys across `update()`.
+* Release global listeners in `destroy()`.
+
+The adapter SHOULD:
+* Translate native gesture events into the canonical Op vocabulary before emitting `on("op", ...)`.
+* Suppress duplicate `setAttr` ops on the same id/key during drag (the overlay store coalesces these as a safety net, but emit fewer if possible).
+
+!! Op vocabulary (overlay log)
+
+```
+{ op: "hide",       id: string }
+{ op: "rename",     id: string, label: string }
+{ op: "setAttr",    id: string, key: string, value: any }
+{ op: "reparent",   id: string, newParent: string, index?: number }
+{ op: "reorder",    parent: string, order: string[] }
+{ op: "addNode",    parent: string, node: MNode, index?: number }
+{ op: "removeNode", id: string }
+```
+
+!! Filter operators
+
+|!Operator |!Returns |
+|`[mindmap-engines[]]` |Names of all registered `mindmapengine` modules |
+|`[mindmap-producers[]]` |Names of all registered `mindmap-producer` modules |
+
+!! Config tiddlers
+
+|!Tiddler |!Purpose |
+|`$:/config/rimir/mindmap/default-engine` |Fallback engine name when widget and view don't specify |
+
+</$fill>
+</$transclude>

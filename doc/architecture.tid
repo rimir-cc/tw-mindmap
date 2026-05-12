@@ -1,0 +1,95 @@
+created: 20260511000000000
+modified: 20260511000000000
+rdt.order: 2
+rdt.plugin-key: mindmap
+rdt.plugin-name: mindmap
+rdt.plugin-subtitle: Engine-agnostic mindmap rendering with base + overlay data model
+rdt.section: Architecture
+title: $:/plugins/rimir/mindmap/doc/architecture
+type: text/vnd.tiddlywiki
+
+<$transclude $tiddler="$:/plugins/rimir/doc-template/templates/page">
+<$fill $name="body">
+
+!! Three collaborators
+
+The `$mindmap` widget orchestrates three independent pieces. None of them know about the others:
+
+|!Collaborator |!Module type |!Responsibility |
+|Producer |`mindmap-producer` |Reads wiki data → emits base MDOM. Pure projection; never writes |
+|Composer |`compose.js` library |Applies the overlay op log to base MDOM → composite MDOM. Pure function |
+|Engine |`mindmapengine` |Renders the composite MDOM into the DOM. Emits user-gesture events back |
+
+Plus the ''overlay store'' (`overlay-store.js`) — reads, writes (debounced) and appends to the overlay tiddler. Isolated so engine event handlers don't have to think about tiddler I/O.
+
+!! MDOM (canonical document)
+
+```
+type MDOM = {
+    version: 1,
+    root: MNode,
+    crossLinks?: { from, to, label?, kind?, attrs? }[],
+    meta?: { producer, producedAt, source? }
+};
+type MNode = {
+    id: string,           // stable, producer-assigned
+    label: string,
+    body?: string,
+    children?: MNode[],   // tree by nesting; no parent field
+    attrs?: { [k: string]: any }
+};
+```
+
+Tree is by nesting. There is intentionally ''no parent field'' on nodes — that would create round-trip ambiguity when overlays reparent things.
+
+!!! Attribute namespaces
+
+`attrs` is the open extension point. Adapters MUST preserve unknown-namespace attrs across `update()`, so engine-specific overlay state survives engine swaps.
+
+|!Prefix |!Owner |
+|`core:*` |Engine-agnostic hints every adapter respects what it can (`core:icon`, `core:color`, `core:collapsed`, `core:hidden`, `core:tiddler`, `core:synthetic`) |
+|`mx:*` |mind-elixir adapter (`mx:tags`, `mx:hyperLink`, `mx:expanded`) |
+|`mm:*` |markmap adapter (future) |
+|`kn:*` |knowledge-app producer (`kn:type`, `kn:tier`) |
+|`tw:*` |TW round-trip metadata |
+
+!! Base + overlay composition
+
+The overlay is an ''ordered op log'' (JSON array in the overlay tiddler's text field), not a state snapshot. This is forward-compatible with v2 slide mode: a slide is just a named overlay (or a layered chain of overlays).
+
+|!Op |!Effect |
+|`hide` |Sets `attrs["core:hidden"] = true` on the target |
+|`rename` |Replaces the target's label |
+|`setAttr` |Writes / deletes a single attr key (`value: null` deletes) |
+|`reparent` |Detaches and re-inserts the target under a different parent (with optional sibling index) |
+|`reorder` |Sparse — sets the order of named children; un-named children keep their relative order |
+|`addNode` |Inserts a new node under `parent`. The node id MUST be unique |
+|`removeNode` |Detaches a node and discards it (distinct from `hide`) |
+
+Ops whose target id is absent from the current base are returned in the composer's `orphans` array. The widget surfaces a count in its toolbar; the user prunes them manually rather than silently losing work after upstream renames.
+
+!! Refresh model
+
+The widget reacts to three signals:
+
+# ''Base data change'' — `refreshFilter` (returned by the producer) is evaluated; if any changed tiddler is in the result, the producer re-projects.
+# ''Overlay tiddler change'' — recompose from cached base, hand to `engine.update(mdom)`.
+# ''User gesture'' — engine emits an `Op` via `on("op", fn)`; widget appends to overlay store (debounced 250 ms).
+
+v1 advertises `capabilities.applyOps = false` for the mind-elixir adapter; the widget always calls `update(mdom)` after a recompose. Per-op transitions are a v2 optimisation.
+
+!! Engine selection precedence
+
+# Widget `engine=` attribute
+# View tiddler `mm.engine` field
+# `$:/config/rimir/mindmap/default-engine`
+# First registered `mindmapengine` module (alphabetical iteration order)
+
+!! What this is NOT
+
+* ''A graph engine.'' Use `flibbles/graph` + `cytoscape-engine` for general-purpose graphs.
+* ''An editor.'' v1 is display + overlay-based restructuring. Free-form node creation/editing inside the canvas may be added later when an engine declares `capabilities.edit = true`.
+* ''A slide player.'' v2.
+
+</$fill>
+</$transclude>

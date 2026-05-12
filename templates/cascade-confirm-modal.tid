@@ -1,0 +1,31 @@
+title: $:/plugins/rimir/mindmap/templates/cascade-confirm-modal
+type: text/vnd.tiddlywiki
+
+<$let
+	pendingState="$:/state/rimir/mindmap/pending-cascade"
+	applyState="$:/state/rimir/mindmap/pending-cascade-apply"
+>
+<div class="rr-mindmap-cascade-overlay">
+<div class="rr-mindmap-cascade-modal">
+<div class="rr-mindmap-cascade-modal-header">
+<strong>Confirm cascade</strong>
+</div>
+<div class="rr-mindmap-cascade-modal-body">
+<div><$text text={{{ [<pendingState>get[summary]] }}}/></div>
+<div>This affects <strong><$text text={{{ [<pendingState>get[count]] }}}/></strong> descendant tiddler<$text text={{{ [<pendingState>get[count]match[1]then[]] ~[[s]] }}}/>.</div>
+<div class="rr-mindmap-cascade-modal-hint">References to renamed titles in other tiddlers will be relinked automatically. Deletes cannot be undone.</div>
+</div>
+<div class="rr-mindmap-cascade-modal-actions">
+<$button class="rr-link-btn">
+<$action-setfield $tiddler=<<applyState>> text="yes"/>
+Confirm
+</$button>
+<$button class="tc-btn-invisible">
+<$action-setfield $tiddler=<<pendingState>> text=""/>
+<$action-setfield $tiddler=<<applyState>> text=""/>
+Cancel
+</$button>
+</div>
+</div>
+</div>
+</$let>

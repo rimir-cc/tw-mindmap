@@ -1,0 +1,94 @@
+created: 20260511000000000
+modified: 20260511000000000
+rdt.order: 4
+rdt.plugin-key: mindmap
+rdt.plugin-name: mindmap
+rdt.plugin-subtitle: Engine-agnostic mindmap rendering with base + overlay data model
+rdt.section: Examples
+title: $:/plugins/rimir/mindmap/doc/examples
+type: text/vnd.tiddlywiki
+
+<$transclude $tiddler="$:/plugins/rimir/doc-template/templates/page">
+<$fill $name="body">
+
+!! 1. Quickest possible — any filter
+
+```
+<$mindmap filter="[tag[Knowledge]]" overlay="$:/state/rimir/mindmap/examples/quick/overlay"/>
+```
+
+The `filter=` quick form uses the built-in `filter-tree` producer with default settings: split each title on `/`, build the tree by common prefixes, attach tiddler text as node body.
+
+!! 2. Knowledge-app — one area
+
+Create a view tiddler `MyView` with these fields:
+
+```
+mm.producer:  knowledge-tree
+mm.args:      {"area":"llm"}
+mm.overlay:   $:/state/rimir/mindmap/views/llm/overlay
+mm.engine:    MindElixir
+```
+
+Then anywhere:
+
+```
+<$mindmap view="MyView"/>
+```
+
+!! 3. Knowledge-app — all areas as a forest
+
+```
+mm.producer:  knowledge-tree
+mm.args:      {"include-areas-root":"yes"}
+mm.overlay:   $:/state/rimir/mindmap/views/all-knowledge/overlay
+```
+
+!! 4. Hand-authored MDOM
+
+A JSON-typed tiddler `MyMap/data`:
+
+```
+{
+  "version": 1,
+  "root": {
+    "id": "my:root", "label": "Core",
+    "children": [
+      { "id": "my:a", "label": "Branch A", "children": [
+        { "id": "my:a1", "label": "Leaf A1" }
+      ]},
+      { "id": "my:b", "label": "Branch B" }
+    ]
+  }
+}
+```
+
+View tiddler:
+
+```
+mm.producer:  json
+mm.args:      {"tiddler":"MyMap/data"}
+mm.overlay:   $:/state/rimir/mindmap/views/manual/overlay
+```
+
+!! 5. Multiple views over the same data
+
+Create two view tiddlers pointing at the same producer/args but different overlays:
+
+|!View |!`mm.overlay` |
+|`MyView/personal` |`$:/state/rimir/mindmap/views/personal/overlay` |
+|`MyView/team` |`$:/state/rimir/mindmap/views/team/overlay` |
+
+Each persists its own positions, hides and reparenting independently.
+
+!! Verification checklist
+
+After installing both `rimir/mindmap` and a working engine adapter:
+
+# Open a `$mindmap filter="..."/>` against a small known set of tiddlers; nodes match the expected count.
+# Drag a node to a new parent in the canvas; reload the wiki; the node remains in the new position (overlay persisted).
+# Rename a source tiddler in the wiki; the orphan badge appears in the widget toolbar showing the count.
+# Switch `$:/config/rimir/mindmap/default-engine` between two installed engines; round-trip preserves `mx:*` attrs even when an unrelated engine renders in between.
+
+</$fill>
+</$transclude>

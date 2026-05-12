@@ -1,0 +1,12 @@
+title: $:/plugins/rimir/mindmap/documentation
+type: text/vnd.tiddlywiki
+
+<$list filter="[[$:/plugins/rimir/doc-template/views/docs]is[shadow]]" variable="_">
+<$transclude $tiddler="$:/plugins/rimir/doc-template/views/docs" plugin-title="$:/plugins/rimir/mindmap"/>
+</$list>
+
+<$list filter="[[$:/plugins/rimir/doc-template/views/docs]!is[shadow]]" variable="_">
+
+> ''doc-template'' plugin is not installed. Please refer to the ''readme'' tab for documentation.
+
+</$list>

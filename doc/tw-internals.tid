@@ -1,0 +1,53 @@
+created: 20260511000000000
+modified: 20260511000000000
+rdt.order: 7
+rdt.plugin-key: mindmap
+rdt.plugin-name: mindmap
+rdt.plugin-subtitle: Engine-agnostic mindmap rendering with base + overlay data model
+rdt.section: TW internals
+title: $:/plugins/rimir/mindmap/doc/tw-internals
+type: text/vnd.tiddlywiki
+
+<$transclude $tiddler="$:/plugins/rimir/doc-template/templates/page">
+<$fill $name="body">
+
+!! Module-type discovery
+
+The widget calls `$tw.modules.getModulesByTypeAsHashmap("mindmapengine")` and `"mindmap-producer"` at render time. The hashmap key is the JS module's tiddler title; the value is the exports object. Names are deduplicated via `exports.name`. Module-type registration only happens at boot — adding a new producer or engine requires a server restart.
+
+!! `<$transclude>` and `thisTiddler`
+
+In TW 5.4.0+, `<$transclude $tiddler="X" $mode="block"/>` sets `thisTiddler`, not `currentTiddler`. Producers that resolve "the rendering context" from filters should read both:
+
+```
+{{{ [<thisTiddler>!is[blank]] ~[<currentTiddler>] }}}
+```
+
+The `$mindmap` widget itself doesn't expose this variable to producers in v1, but custom producers running inside a transclude chain should be defensive.
+
+!! `\function` fake-widget context
+
+If a custom producer evaluates filter expressions that walk the widget tree (e.g. `statewrap-get`), use `\procedure` + `[subfilter<...>]` inside the producer's body, not `\function` + `[function[...]]`. The fake widget created by `\function` has no `parentWidget` chain.
+
+!! Hook chain safety
+
+The widget does not install any `th-*` hooks. If a future feature needs to listen for tiddler change/delete, it must `return tiddler` from the hook (per the well-known gotcha that breaks the entire hook chain when any plugin forgets).
+
+!! filesystem-watcher / git-int interactions
+
+Every overlay write triggers a tiddler change → filesystem-watcher writes the file → git-int notices a dirty working tree. We debounce overlay writes at 250 ms, and adapters MUST collapse drag gestures to start/end pairs instead of emitting `setAttr` per pointermove. If you see git-int spamming with intermediate positions, the adapter is the bug.
+
+!! Restricted-wiki implications
+
+In `llm-connect` or other restricted-wiki environments, overlay tiddler titles must be in the protection allow filter. Writes to titles outside the filter are silently dropped (no exception). The settings tab documents this; the widget cannot detect it client-side.
+
+!! TestCaseWidget pollution
+
+The `test/` fixtures use `tags: $:/tags/wiki-test-spec`. Tests that addTiddler from the browser will land in `pw-edition/tiddlers/` (gitignored) and shadow plugin tiddlers in subsequent runs. Always clean up in `afterEach` or use disposable state titles.
+
+!! Code-body parsing
+
+The `views.tid` and `producers.tid` tool tabs use `\procedure` pragmas. They MUST NOT carry `code-body: yes` or pragmas become literal text. See `tw-wikitext-gotchas.md` in the project memory for the full list.
+
+</$fill>
+</$transclude>

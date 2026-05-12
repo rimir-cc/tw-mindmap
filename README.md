@@ -1,0 +1,37 @@
+# mindmap
+
+Engine-agnostic mindmap rendering for TiddlyWiki. Provides a canonical mindmap document model (MDOM), a per-view overlay layer for layout and restructuring that does not write back to wiki data, and a pluggable adapter contract for visualization libraries.
+
+## Key features
+
+- **Engine-agnostic** — pluggable adapters via `module-type: mindmapengine`. Ships with no built-in engine; install a companion plugin such as `rimir/mindmap-elixir` to render.
+- **Three producer mechanisms** — `module-type: mindmap-producer` modules, JSON MDOM tiddlers, or a `filter=` quick form. All feed the same canonical document.
+- **Base + overlay model** — view-specific positioning, hides, reparenting and custom nodes ride in a separate overlay tiddler (ordered op log). Multiple views over the same base data are first-class.
+- **Structural editing (write-back)** — producers that declare `capabilities.structural` translate drag-rename / drag-reparent / addNode / removeNode into real wiki mutations (`renameTiddler` cascades references via flibbles/relink; `addTiddler`/`deleteTiddler` for create/destroy). Cascade-confirm modal guards large operations. Focus mode drills into subtrees.
+- **Stable IDs with rename rescue** — producers assign deterministic IDs; orphaned overlay ops survive upstream renames and surface a manual prune action rather than silently disappearing.
+- **Forward-compatible with slide mode** — the overlay op vocabulary doubles as the slide-ops vocabulary for the planned presentation player.
+
+## Prerequisites
+
+- TiddlyWiki 5.3.0+
+- At least one installed engine plugin (e.g. `$:/plugins/rimir/mindmap-elixir`).
+
+## Quick start
+
+1. Install this plugin alongside an engine plugin.
+2. Create a view tiddler with fields `mm.producer`, `mm.args`, `mm.engine`, `mm.overlay`.
+3. Render with `<$mindmap view="MyView"/>`.
+
+For a one-off mindmap of any filter:
+
+```
+<$mindmap filter="[tag[Knowledge]]" engine="MindElixir" overlay="MyMap/overlay"/>
+```
+
+## Architecture
+
+See `doc/architecture.tid` (renders in the documentation tab when `doc-template` is installed) or the inline source comments in `widget.js`, `compose.js`, and `overlay-store.js`.
+
+## License
+
+MIT — see `LICENSE.md`.

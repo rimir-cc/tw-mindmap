@@ -1,0 +1,61 @@
+created: 20260511000000000
+modified: 20260511000000000
+rdt.hub-category: visualization
+rdt.hub-category-name: Visualization & Layout
+rdt.hub-order: 20
+rdt.order: 1
+rdt.plugin-key: mindmap
+rdt.plugin-name: mindmap
+rdt.plugin-subtitle: Engine-agnostic mindmap rendering with base + overlay data model
+rdt.section: Overview
+title: $:/plugins/rimir/mindmap/doc/overview
+type: text/vnd.tiddlywiki
+
+<$transclude $tiddler="$:/plugins/rimir/doc-template/templates/page">
+<$fill $name="body">
+
+!! What it does
+
+`rimir/mindmap` provides engine-agnostic mindmap rendering for TiddlyWiki. It defines a canonical mindmap document model (MDOM), separates ''data projection'' (producer modules that read wiki data) from ''visualization'' (engine adapters that draw it), and adds a per-view ''overlay'' layer where positioning and restructuring changes are stored without writing back to the underlying wiki data.
+
+Inspired by the `flibbles/graph` + engine-adapter split (e.g. `cytoscape-engine`), but tree-shaped from the ground up — mindmap engines like mind-elixir take a recursive `{topic, children}` tree, not a flat node/edge list.
+
+!! Key features
+
+* ''Engine-agnostic'' — pluggable adapters via `module-type: mindmapengine`. v1 ships with no built-in engine; install a companion plugin such as `rimir/mindmap-elixir`.
+* ''Three producer mechanisms'' — `module-type: mindmap-producer` modules, JSON MDOM tiddlers, or a `filter=` quick form. All feed the same canonical document.
+* ''Base + overlay model'' — view-specific positioning, hides, reparenting and custom nodes ride in a separate overlay tiddler (ordered op log). Multiple views over the same base data are first-class.
+* ''Stable IDs with rename rescue'' — producers assign deterministic IDs; orphaned overlay ops survive upstream renames and surface a manual prune action rather than silently disappearing.
+* ''Forward-compatible with slide mode'' — the overlay op vocabulary doubles as the slide-ops vocabulary for the planned v2 presentation player.
+
+!! How it fits together
+
+```
+       Wiki tiddlers
+            │
+            ▼
+   ┌────────────────┐    base MDOM      ┌──────────────┐
+   │  producer (JS) │ ──────────────────▶  composer    │
+   └────────────────┘                   │              │
+            ▲                           │  base + ops  │  composite MDOM
+            │ refreshFilter             │              │ ─────────────┐
+            │                           └──────────────┘              │
+            │                                  ▲                      ▼
+   changes in matching                         │             ┌──────────────────┐
+        tiddlers                          ops log            │  engine adapter  │
+                                              ▲             └──────────────────┘
+                                              │                      │
+                                       overlay tiddler               ▼
+                                              ▲                  DOM canvas
+                                              │                      │
+                                              └──────── op ──────────┘
+                                                  (user gesture)
+```
+
+!! Prerequisites
+
+* TiddlyWiki 5.3.0+
+* An installed engine plugin (e.g. `$:/plugins/rimir/mindmap-elixir`).
+
+</$fill>
+</$transclude>
