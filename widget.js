@@ -745,15 +745,26 @@ MindmapWidget.prototype.updatePreviewState = function (nodeId) {
     this.updatePreviewPaneVisibility();
 };
 
-// Show the preview pane when there's something useful for it to render:
-// either a node is selected (Body / Slides modes) or a presentation is
-// active for this view (Presentation mode — whole-view, not selection-
-// dependent). With neither, hide it so the canvas reclaims the full width.
+// Show the preview pane when there's content for the active inspect-mode to
+// render. The previous version (v0.2.6) kept the pane visible whenever a
+// presentation was active on the view — but in Body / Slides modes that
+// pinned the pane open even with no selection, blocking the canvas from
+// reclaiming full width. The fix: visibility is mode-aware.
+//   - body / slides: needs a selection
+//   - presentation:  needs an active presentation (selection optional)
+// To switch into Presentation mode without a selection, select any node so
+// the modebar appears, then pick the presentation from the dropdown.
 MindmapWidget.prototype.updatePreviewPaneVisibility = function () {
     if (!this.previewPane) { return; }
     var hasSelection = !!(this.selectedNodeId && this.selectedBackingTitle());
-    var hasPresentation = !!this.currentPresentationTitle();
-    this.previewPane.style.display = (hasSelection || hasPresentation) ? "" : "none";
+    var mode = this.currentInspectMode();
+    var visible;
+    if (mode === "presentation") {
+        visible = !!this.currentPresentationTitle();
+    } else {
+        visible = hasSelection;
+    }
+    this.previewPane.style.display = visible ? "" : "none";
 };
 
 // Create a `Draft of '<targetTitle>'` tiddler the way TW's navigator widget
@@ -1455,13 +1466,19 @@ MindmapWidget.prototype.toggleSlidesOnly = function () {
 };
 
 // Reflect the slides-only state in the toolbar button's pressed class and
-// label. Called from renderToolbar (initial render) and refresh() when the
-// state tiddler changes.
+// label, and stamp/clear a container class so CSS can target slide-bearing
+// nodes selectively (only-while-pruning, to avoid the indicator showing up
+// when the whole tree is visible). Called from renderToolbar (initial
+// render) and refresh() when the state tiddler changes.
 MindmapWidget.prototype.updateSlidesOnlyButton = function () {
-    if (!this.slidesOnlyBtn) { return; }
     var on = this.currentSlidesOnly();
-    this.slidesOnlyBtn.classList.toggle("rr-mindmap-slides-only-btn-active", on);
-    this.slidesOnlyBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    if (this.slidesOnlyBtn) {
+        this.slidesOnlyBtn.classList.toggle("rr-mindmap-slides-only-btn-active", on);
+        this.slidesOnlyBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+    if (this.containerNode) {
+        this.containerNode.classList.toggle("rr-mindmap-slides-only-active", on);
+    }
 };
 
 // Handler for the rr-mindmap-add-slide custom message dispatched from the
