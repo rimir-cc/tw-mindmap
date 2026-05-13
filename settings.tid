@@ -92,6 +92,23 @@ The choice lives in `$:/state/rimir/mindmap/<key>/slides-only` — `$:/state/`, 
 
 Composes with focus mode and label-field — focus re-roots first, then slides-only prunes the focused subtree, then label-field rewrites the visible labels.
 
+!! View toggle (canvas toolbar)
+
+Visible only when the widget is in //view-mode// (has `view=`) AND the producer is //structural//. Pressed = the preview pane stays open regardless of selection or inspect-mode; released = the pane follows the default rule (selection-driven in Body / Slides, presentation-driven in Presentation mode).
+
+The toggle exists because configuring a presentation goes through the modebar dropdown in the preview pane — without ''View'' pressed, you'd have to click an arbitrary node first just to make the modebar appear. The state lives in `$:/state/rimir/mindmap/<key>/view-pinned` (session-scoped).
+
+!! Fullscreen player (preview-pane modebar + Shift+F2)
+
+The right-pane modebar grows a compact ▶ button next to the inspect-mode dropdown whenever (a) the inspect-mode is //Presentation//, AND (b) the active presentation resolves to at least one slide. Click it (or press ''Shift+F2'' with focus inside the canvas) to launch the [[rimir/present|$:/plugins/rimir/present/readme]] fullscreen player against the active deck.
+
+The handoff goes through two state tiddlers:
+
+* `$:/state/rimir/mindmap/present-target` — the presentation tiddler title
+* `$:/state/rimir/mindmap/present-open` — `yes` while the overlay is open
+
+The plugin tiddler `$:/plugins/rimir/mindmap/templates/present-overlay` (tagged `$:/tags/PageTemplate`) is the bridge — it gates a `<$present>` widget on the `present-open` state and feeds it the slide-titles filter `[<pres>mm-presentation-slides[]]` based on `present-target`.
+
 !! Slide authoring (right pane)
 
 The preview pane carries a modebar above its content with the selected tiddler's title on the left and a unified dropdown on the right — ''Body'' / ''Slides'' / ''<each presentation>'' / ''+ New presentation…''. Switching to ''Slides'' replaces the body preview with a list of slide cards for the selected node — add, edit (inline), move up/down, delete.
@@ -156,9 +173,9 @@ The currently-active presentation for a view is referenced by the view tiddler's
 
 * Presentations coexist — picking `[none]` deactivates without deleting. Switching presentations is non-destructive.
 * Deleting a presentation tiddler removes it from the toolbar dropdown automatically (the widget watches presentation-tagged tiddlers).
-* Renaming a tiddler in `mm.slides-order` does NOT cascade — Phase 3 will register the field with flibbles/relink for rename cascade.
+* Renaming a tiddler in `mm.slides-order` does NOT cascade — Phase 3C-ii will register the field with flibbles/relink for rename cascade.
 
-Phase 3 will add the ''presentation creation mode'' (visual fading of non-included nodes on the canvas, drag-to-reorder, per-slide transition overrides) and the ''fullscreen player'' (sequential walk with keyboard navigation).
+Phase 3C-i (the fullscreen player handoff) shipped in v0.2.10 — see the //Fullscreen player// section above. Phase 3C-ii (the //presentation creation mode// — visual fading of non-included nodes on the canvas, drag-to-reorder of `mm.slides-order`, per-slide transition overrides) is the remaining piece.
 
 !! Overlay tiddler titles and persistence
 

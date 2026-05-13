@@ -104,6 +104,21 @@ type: text/vnd.tiddlywiki
 .rr-mindmap-preview-modebar .rr-mindmap-modebar-select {
     flex: 0 0 auto;
 }
+.rr-mindmap-modebar-play-btn {
+    flex: 0 0 auto;
+    padding: 0.15em 0.55em;
+    border: 1px solid <<colour primary>>;
+    background: <<colour primary>>;
+    color: <<colour background>>;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    line-height: 1.4;
+    margin-left: 0.3em;
+}
+.rr-mindmap-modebar-play-btn:hover {
+    filter: brightness(1.1);
+}
 .rr-mindmap-preview-body {
     line-height: 1.5;
 }
@@ -135,10 +150,18 @@ type: text/vnd.tiddlywiki
     font-family: var(--theme-monospace-font, monospace);
 }
 
-/* Slides-only filter toggle button. Compact chip styled to fit alongside
-   the monospace producer/engine labels; flips to a pressed accent when
-   active, mirroring the canvas pruning. */
-.rr-mindmap-slides-only-btn {
+/* Toolbar toggle chips. Used by ''Slides only'' and ''View''. Compact
+   button styled to fit alongside the monospace producer/engine labels;
+   `-active` variant flips to the primary accent when pressed. Right-anchor
+   behaviour: the FIRST toggle in document order takes margin-left:auto so
+   it pushes itself (and subsequent toggles) flush-right; the rest sit
+   adjacent with a small gap. This keeps the group stable when individual
+   toggles are conditionally hidden (e.g. Slides only hidden for producers
+   without `capabilities.slides`). */
+.rr-mindmap-toolbar-toggle {
+    /* Default: eat the free space to push self (and any subsequent siblings
+       of this class) flush-right. Overridden below for non-first toggles. */
+    margin-left: auto;
     background: transparent;
     border: 1px solid <<colour tiddler-border>>;
     border-radius: 3px;
@@ -148,15 +171,18 @@ type: text/vnd.tiddlywiki
     cursor: pointer;
     color: inherit;
 }
-.rr-mindmap-slides-only-btn:hover {
+.rr-mindmap-toolbar-toggle ~ .rr-mindmap-toolbar-toggle {
+    margin-left: 0.4em;
+}
+.rr-mindmap-toolbar-toggle:hover {
     background: <<colour message-background>>;
 }
-.rr-mindmap-slides-only-btn-active {
+.rr-mindmap-toolbar-toggle.rr-mindmap-toolbar-toggle-active {
     background: <<colour primary>>;
     color: <<colour background>>;
     border-color: <<colour primary>>;
 }
-.rr-mindmap-slides-only-btn-active:hover {
+.rr-mindmap-toolbar-toggle.rr-mindmap-toolbar-toggle-active:hover {
     background: <<colour primary>>;
     color: <<colour background>>;
     opacity: 0.9;

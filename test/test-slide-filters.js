@@ -87,4 +87,69 @@ describe("mindmap-slide-filters", function () {
                 .toEqual(["yes"]);
         });
     });
+
+    describe("mm-presentation-slides", function () {
+        function presentationWith(slidesOrder) {
+            return {
+                title: "presentations/p1",
+                tags: "$:/tags/rimir/mindmap/presentation",
+                "mm.view": "view/x",
+                "mm.slides-order": slidesOrder
+            };
+        }
+
+        it("flat-maps the presentation's slides-order through each owner's mm-slides", function () {
+            var wiki = setupWiki(ownerSeed().concat([
+                { title: "knowledge/llm/bar", "kn.type": "note", text: "" }
+            ]));
+            var fooSlide1 = lib.addSlide(wiki, "knowledge/llm/foo");
+            var fooSlide2 = lib.addSlide(wiki, "knowledge/llm/foo");
+            var barSlide = lib.addSlide(wiki, "knowledge/llm/bar");
+            wiki.addTiddler(presentationWith("[[knowledge/llm/foo]] [[knowledge/llm/bar]]"));
+            var out = ops["mm-presentation-slides"](
+                source(["presentations/p1"]), {}, { wiki: wiki }
+            );
+            expect(out).toEqual([fooSlide1, fooSlide2, barSlide]);
+        });
+
+        it("preserves slide-order order within each owner", function () {
+            var wiki = setupWiki(ownerSeed());
+            var a = lib.addSlide(wiki, "knowledge/llm/foo");
+            var b = lib.addSlide(wiki, "knowledge/llm/foo");
+            // Move b before a in the owner's slide-order
+            lib.moveSlide(wiki, b, -1);
+            wiki.addTiddler(presentationWith("[[knowledge/llm/foo]]"));
+            var out = ops["mm-presentation-slides"](
+                source(["presentations/p1"]), {}, { wiki: wiki }
+            );
+            expect(out).toEqual([b, a]);
+        });
+
+        it("skips owners that don't exist", function () {
+            var wiki = setupWiki(ownerSeed());
+            var t = lib.addSlide(wiki, "knowledge/llm/foo");
+            wiki.addTiddler(presentationWith("[[knowledge/llm/foo]] [[knowledge/missing]]"));
+            var out = ops["mm-presentation-slides"](
+                source(["presentations/p1"]), {}, { wiki: wiki }
+            );
+            expect(out).toEqual([t]);
+        });
+
+        it("returns an empty array when the presentation has no slides-order", function () {
+            var wiki = setupWiki(ownerSeed());
+            wiki.addTiddler(presentationWith(""));
+            var out = ops["mm-presentation-slides"](
+                source(["presentations/p1"]), {}, { wiki: wiki }
+            );
+            expect(out).toEqual([]);
+        });
+
+        it("returns an empty array when the presentation tiddler doesn't exist", function () {
+            var wiki = setupWiki(ownerSeed());
+            var out = ops["mm-presentation-slides"](
+                source(["presentations/missing"]), {}, { wiki: wiki }
+            );
+            expect(out).toEqual([]);
+        });
+    });
 });

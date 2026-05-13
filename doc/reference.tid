@@ -126,6 +126,7 @@ The adapter SHOULD:
 |`[<owner>mm-slides[]]` |Ordered slide tiddler titles for the given owner (reads `mm.slide-order`; stale entries dropped) |
 |`[<owner>mm-slide-count[]]` |Number of slides on the given owner |
 |`[<owner>mm-has-slides[]]` |`yes` / `no` — does this owner have at least one slide |
+|`[<pres>mm-presentation-slides[]]` |Flat ordered list of slide tiddler titles for a presentation. Walks the presentation's `mm.slides-order` and, per owner node, emits each slide in `mm.slide-order` order. Designed to feed `<$present slides=…/>` from `rimir/present` |
 |`[mm-presentations<viewTitle>]` |Titles of presentation tiddlers (tag `$:/tags/rimir/mindmap/presentation`) whose `mm.view` matches the operand |
 
 !! Widgets

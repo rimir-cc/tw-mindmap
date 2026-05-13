@@ -208,12 +208,12 @@ A presentation is a ''playlist'': a tiddler tagged `$:/tags/rimir/mindmap/presen
 * Storage: tiddler titles (not producer node-ids). Stable across producer swaps — only tiddler renames can break references (and Phase 3 will register the field with flibbles/relink for rename cascade).
 * UI surfaces are colocated with the right pane (since "what does the right pane show?" is the question the dropdown answers): the preview-pane modebar dropdown unifies mode + presentation picking — options are Body / Slides / each presentation for the view / + New presentation… in an optgroup. The bottom-right actions panel gets a `+/−` toggle for selected-node membership in the active presentation. Clicking a node title in the playlist dispatches `rr-mindmap-select-node-by-title`; the widget resolves it via the producer's new `idForTitle` helper and calls `engine.focus()` to centre+select on the canvas.
 
-Phase 3B will add a ''slides-only view'' (prune nodes whose `mm-has-slides` is `no`, leaving only the presentation-eligible spine of the knowledge tree). Phase 3C will add the ''fullscreen player'' (sequential walk with keyboard navigation) and the ''presentation creation mode'' (visual fading of non-included nodes, drag-to-reorder, per-slide overrides).
+Phase 3B (shipped in v0.2.8) added the ''slides-only view'' — the canvas can be pruned to nodes with at least one slide plus their ancestor spine. Phase 3C-i (shipped in v0.2.10) added the ''fullscreen player'' integration: a new filter operator `[<pres>mm-presentation-slides[]]` flattens a presentation to its ordered slide tiddlers, a Shift+F2 hotkey + compact ▶ button hand off to the `rimir/present` plugin's `$present` widget, and a page-template tiddler `templates/present-overlay` gates the overlay on a state tiddler. Phase 3C-ii (next) will add the ''presentation creation mode'' on the canvas — visual fading of non-included nodes, drag-to-reorder of `mm.slides-order`, per-slide overrides.
 
 !! What this is NOT
 
 * ''A graph engine.'' Use `flibbles/graph` + `cytoscape-engine` for general-purpose graphs.
-* ''A fullscreen slide player.'' Phase 2 ships the playlist + read-side sequence view; the fullscreen keyboard-driven player is Phase 3.
+* ''The slide player itself.'' This plugin produces the slide list and hands off to `rimir/present` for the actual fullscreen rendering — see [[its docs|$:/plugins/rimir/present/readme]] for navigation, layouts, and the deep-dive breadcrumb.
 
 </$fill>
 </$transclude>

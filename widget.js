@@ -94,6 +94,7 @@ MindmapWidget.prototype.render = function (parent, nextSibling) {
     }
 
     this.renderToolbar();
+    this.bindPlayHotkey();
     // Layout: a horizontal flex row containing the canvas (mind-elixir host)
     // on the left and an optional preview pane on the right.
     this.mainArea = this.document.createElement("div");
@@ -280,6 +281,28 @@ MindmapWidget.prototype.slidesOnlyStateTitle = function () {
 
 MindmapWidget.prototype.currentSlidesOnly = function () {
     return trim(this.wiki.getTiddlerText(this.slidesOnlyStateTitle(), "")) === "yes";
+};
+
+// "Pin the preview pane open" toggle. When yes, the pane is visible
+// regardless of selection / inspect-mode rules — useful when configuring a
+// presentation without first having to click an arbitrary node just to make
+// the modebar appear. When the toggle is off (default), the pane reverts to
+// the rule encoded by isPreviewPaneVisible(). $:/state/ — session-scoped.
+MindmapWidget.prototype.viewPinnedStateTitle = function () {
+    var key = this.stateAttr || this.viewAttr || this.filterAttr || "default";
+    return "$:/state/rimir/mindmap/" + key + "/view-pinned";
+};
+
+MindmapWidget.prototype.currentViewPinned = function () {
+    return trim(this.wiki.getTiddlerText(this.viewPinnedStateTitle(), "")) === "yes";
+};
+
+MindmapWidget.prototype.toggleViewPinned = function () {
+    var on = this.currentViewPinned();
+    this.wiki.addTiddler(new $tw.Tiddler({
+        title: this.viewPinnedStateTitle(),
+        text: on ? "" : "yes"
+    }));
 };
 
 // Session-only state tiddler for the right-pane inspect mode.
@@ -509,6 +532,20 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
     });
     this.previewModebar.appendChild(this.modebarSelect);
 
+    // Inline ▶ play button next to the dropdown. Visible only when inspect
+    // mode is Presentation AND the active deck resolves to ≥1 slide; hidden
+    // otherwise so it never invites a no-op click.
+    this.modebarPlayBtn = this.document.createElement("button");
+    this.modebarPlayBtn.type = "button";
+    this.modebarPlayBtn.className = "rr-mindmap-modebar-play-btn";
+    this.modebarPlayBtn.textContent = "▶";
+    this.modebarPlayBtn.title = "Start the fullscreen player (Shift+F2)";
+    this.modebarPlayBtn.style.display = "none";
+    this.modebarPlayBtn.addEventListener("click", function () {
+        self.startPresentation();
+    });
+    this.previewModebar.appendChild(this.modebarPlayBtn);
+
     this.previewPane.appendChild(this.previewModebar);
 
     // Content container — wikitext widget tree renders here.
@@ -647,6 +684,7 @@ MindmapWidget.prototype.updateModebarSelectedValue = function () {
         if (this.modebarSelect.options[i].value === value) { found = true; break; }
     }
     this.modebarSelect.value = found ? value : "body";
+    this.updateModebarPlayButton();
 };
 
 // Handle a change in the modebar dropdown.
@@ -765,7 +803,12 @@ MindmapWidget.prototype.updatePreviewPaneVisibility = function () {
     var hasSelection = !!(this.selectedNodeId && this.selectedBackingTitle());
     var mode = this.currentInspectMode();
     var hasPresentation = !!this.currentPresentationTitle();
-    var visible = isPreviewPaneVisible(mode, hasSelection, hasPresentation);
+    // "View" toggle pins the pane open unconditionally. Otherwise fall back
+    // to the rule encoded by isPreviewPaneVisible() (which the regression
+    // specs pin). Kept as a wrapper override so the pure function stays
+    // 3-arg and the test contract doesn't change.
+    var visible = this.currentViewPinned() ||
+        isPreviewPaneVisible(mode, hasSelection, hasPresentation);
     this.previewPane.style.display = visible ? "" : "none";
 };
 
@@ -1040,6 +1083,11 @@ MindmapWidget.prototype.refreshPresentationUI = function (changedTiddlers) {
     if (active && changedTiddlers[active]) {
         this.updateActionsVisibility();
     }
+    // Slide-tiddler add/remove on owner nodes can flip the deck from
+    // empty → non-empty (or vice versa) without touching the presentation
+    // tiddler itself. Re-evaluate the modebar play-button on every refresh
+    // so the affordance stays in sync.
+    this.updateModebarPlayButton();
 };
 
 MindmapWidget.prototype.refresh = function (changedTiddlers) {
@@ -1146,6 +1194,14 @@ MindmapWidget.prototype.refresh = function (changedTiddlers) {
         this.forwardPreviewRefresh(changedTiddlers);
         return true;
     }
+    // View-pin toggle: no producer re-run; just flip pane visibility +
+    // button pressed-state.
+    if (changedTiddlers[this.viewPinnedStateTitle()]) {
+        this.updateViewPinButton();
+        this.updatePreviewPaneVisibility();
+        this.forwardPreviewRefresh(changedTiddlers);
+        return true;
+    }
     // Inspect-mode switch: keep the JS-built modebar dropdown in sync and
     // update pane visibility (presentation mode shows pane even without a
     // selection). The wikitext content branch reads the state reactively so
@@ -1198,7 +1254,7 @@ MindmapWidget.prototype.renderToolbar = function () {
     // when the container carries the .rr-mindmap-title-active class.
     this.titleModeWarning = this.document.createElement("span");
     this.titleModeWarning.className = "rr-mindmap-title-warning";
-    this.titleModeWarning.textContent = "⚠ Title-mode — drag-rename rewrites tiddler titles and cascades references across the wiki.";
+    this.titleModeWarning.textContent = "⚠ Title-mode — drag-rename rewrites tiddler titles (other modes only update the chosen field). Reparents cascade references in every mode.";
     this.toolbarNode.appendChild(this.titleModeWarning);
 
     // Slides-only filter toggle. Visible only when the producer advertises
@@ -1209,7 +1265,7 @@ MindmapWidget.prototype.renderToolbar = function () {
     if (producerForSlides && producerForSlides.capabilities && producerForSlides.capabilities.slides) {
         this.slidesOnlyBtn = this.document.createElement("button");
         this.slidesOnlyBtn.type = "button";
-        this.slidesOnlyBtn.className = "rr-mindmap-slides-only-btn";
+        this.slidesOnlyBtn.className = "rr-mindmap-toolbar-toggle rr-mindmap-slides-only-btn";
         this.slidesOnlyBtn.textContent = "Slides only";
         this.slidesOnlyBtn.title = "Show only nodes with slides (or descendants that have slides)";
         var slidesOnlySelf = this;
@@ -1218,6 +1274,29 @@ MindmapWidget.prototype.renderToolbar = function () {
         });
         this.toolbarNode.appendChild(this.slidesOnlyBtn);
         this.updateSlidesOnlyButton();
+    }
+
+    // "View" toggle — pins the preview pane open regardless of selection or
+    // inspect-mode. Only meaningful when (a) we have a view tiddler (so the
+    // modebar's Presentations group exists and the user has somewhere to
+    // store mm.presentation) AND (b) the producer is structural (so node
+    // selection maps to real tiddler content; the pane wouldn't be useful
+    // for hand-crafted MDOM or filter= mode). Hidden otherwise.
+    var producerForView = findProducerByName(this.producerName);
+    var isStructuralForView = !!(producerForView && producerForView.capabilities &&
+        producerForView.capabilities.structural);
+    if (this.viewAttr && isStructuralForView) {
+        this.viewPinBtn = this.document.createElement("button");
+        this.viewPinBtn.type = "button";
+        this.viewPinBtn.className = "rr-mindmap-toolbar-toggle rr-mindmap-view-pin-btn";
+        this.viewPinBtn.textContent = "View";
+        this.viewPinBtn.title = "Keep the right-hand view always open (otherwise it appears only when a node is selected or a presentation is active)";
+        var viewPinSelf = this;
+        this.viewPinBtn.addEventListener("click", function () {
+            viewPinSelf.toggleViewPinned();
+        });
+        this.toolbarNode.appendChild(this.viewPinBtn);
+        this.updateViewPinButton();
     }
 
     this.orphanBadge = this.document.createElement("button");
@@ -1472,10 +1551,18 @@ MindmapWidget.prototype.toggleSlidesOnly = function () {
 // nodes selectively (only-while-pruning, to avoid the indicator showing up
 // when the whole tree is visible). Called from renderToolbar (initial
 // render) and refresh() when the state tiddler changes.
+// Mirror the View-pin state into the toolbar button's pressed class.
+MindmapWidget.prototype.updateViewPinButton = function () {
+    if (!this.viewPinBtn) { return; }
+    var on = this.currentViewPinned();
+    this.viewPinBtn.classList.toggle("rr-mindmap-toolbar-toggle-active", on);
+    this.viewPinBtn.setAttribute("aria-pressed", on ? "true" : "false");
+};
+
 MindmapWidget.prototype.updateSlidesOnlyButton = function () {
     var on = this.currentSlidesOnly();
     if (this.slidesOnlyBtn) {
-        this.slidesOnlyBtn.classList.toggle("rr-mindmap-slides-only-btn-active", on);
+        this.slidesOnlyBtn.classList.toggle("rr-mindmap-toolbar-toggle-active", on);
         this.slidesOnlyBtn.setAttribute("aria-pressed", on ? "true" : "false");
     }
     if (this.containerNode) {
@@ -1630,6 +1717,72 @@ MindmapWidget.prototype.destroy = function () {
         try { this.engineInstance.destroy(); } catch (e) { /* engine bug, ignore */ }
     }
     if (this.store) { this.store.flush(); this.store.destroy(); }
+    if (this.unbindPlayHotkey) { this.unbindPlayHotkey(); this.unbindPlayHotkey = null; }
+};
+
+// Does the given presentation tiddler resolve to ≥1 slide? Used to gate the
+// modebar play button and the Shift+F2 hotkey so neither opens an empty
+// deck. Evaluating `[mm-presentation-slides[]]` lazily here keeps the check
+// honest — adding/removing slides on owner nodes flows through immediately.
+MindmapWidget.prototype.presentationHasSlides = function (presentationTitle) {
+    if (!presentationTitle) { return false; }
+    var slides = this.wiki.filterTiddlers(
+        "[mm-presentation-slides[]]",
+        null,
+        this.wiki.makeTiddlerIterator([presentationTitle])
+    );
+    return slides.length > 0;
+};
+
+// Start the fullscreen player for the currently-active presentation on this
+// view. Used by both the modebar ▶ button and the Shift+F2 hotkey. Returns
+// true when the deck was actually opened (visible to the hotkey so it can
+// preventDefault selectively).
+MindmapWidget.prototype.startPresentation = function () {
+    var presentationTitle = this.currentPresentationTitle && this.currentPresentationTitle();
+    if (!this.presentationHasSlides(presentationTitle)) { return false; }
+    this.wiki.addTiddler(new $tw.Tiddler({
+        title: "$:/state/rimir/mindmap/present-target",
+        text: presentationTitle
+    }));
+    this.wiki.addTiddler(new $tw.Tiddler({
+        title: "$:/state/rimir/mindmap/present-open",
+        text: "yes"
+    }));
+    return true;
+};
+
+// Shift+F2 launches the active presentation. Scoped to keydowns inside the
+// container so multiple mindmaps don't fight; the canvas grabs focus on
+// click. F2 alone is taken by the edit-node intercept in the adapter, so
+// we layer on Shift. The browser leaves Shift+F2 unbound — preventDefault
+// is just belt-and-suspenders.
+MindmapWidget.prototype.bindPlayHotkey = function () {
+    if (!this.containerNode) { return; }
+    var self = this;
+    var handler = function (ev) {
+        if (ev.key !== "F2" || !ev.shiftKey) { return; }
+        var t = ev.target;
+        if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
+            return;
+        }
+        if (self.startPresentation()) { ev.preventDefault(); }
+    };
+    this.containerNode.addEventListener("keydown", handler);
+    this.unbindPlayHotkey = function () {
+        if (self.containerNode) { self.containerNode.removeEventListener("keydown", handler); }
+    };
+};
+
+// Show/hide the modebar ▶ button based on inspect-mode + deck content. Call
+// from any code path that touches inspect-mode state or the active
+// presentation.
+MindmapWidget.prototype.updateModebarPlayButton = function () {
+    if (!this.modebarPlayBtn) { return; }
+    var show = this.currentInspectMode &&
+        this.currentInspectMode() === "presentation" &&
+        this.presentationHasSlides(this.currentPresentationTitle());
+    this.modebarPlayBtn.style.display = show ? "" : "none";
 };
 
 exports.mindmap = MindmapWidget;

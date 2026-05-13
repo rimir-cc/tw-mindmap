@@ -1,0 +1,22 @@
+title: $:/plugins/rimir/mindmap/templates/present-overlay
+tags: $:/tags/PageTemplate
+
+\whitespace trim
+<$reveal state="$:/state/rimir/mindmap/present-open" text="yes" type="match" tag="div">
+<$let presentation={{{ [[$:/state/rimir/mindmap/present-target]get[text]] }}}>
+<$list filter="[<presentation>!is[blank]is[tiddler]]" variable="_">
+<$let captionRaw={{{ [<presentation>get[caption]] }}}
+      deckLabel={{{ [<captionRaw>!is[blank]] ~[<presentation>split[/]last[]] }}}>
+<$present
+    slides="[<presentation>mm-presentation-slides[]]"
+    section-field="mm.slide-of"
+    layout-field="mm.slide-layout"
+    caption-field="caption"
+    notes-field="mm.slide-notes"
+    title=<<deckLabel>>
+    on-close-actions="""<$action-setfield $tiddler="$:/state/rimir/mindmap/present-open" text=""/>"""
+/>
+</$let>
+</$list>
+</$let>
+</$reveal>
