@@ -135,6 +135,13 @@ function readChain(wiki, chainTitle, seen) {
         // this chain cares about (e.g. only meetings). Applied before any
         // axis runs or sub-chain descent. Empty = pass everything through.
         leafFilter: trim(f["mm.leaf-filter"]),
+        // Chain-level leaf sort: TW filter that takes the chain's filtered
+        // leaves as input and returns them reordered. Applied AFTER leaf-
+        // filter and BEFORE the axis pipeline — so within each bucket leaves
+        // appear in the sort order (groupBy preserves first-seen). Empty =
+        // keep title-alphabetic (whatever the template's leaf-filter
+        // returned). Example: `+[nsort[datetime]reverse[]]` (newest first).
+        leafSort: trim(f["mm.leaf-sort"]),
         // Either axes (leaf chain — applies them to its leaf set) OR
         // sub-chains (parent chain — recurses, each sub-chain gets the
         // parent's filtered leaf set). When both are set, sub-chains win.
@@ -319,11 +326,54 @@ function applyChainLeafFilter(leaves, chain, wiki, widget) {
     return out;
 }
 
+// Apply the chain's `mm.leaf-sort` filter to its filtered leaves. The filter
+// is evaluated with the leaves as INPUT (so `nsort[field]` operates on them)
+// rather than per-leaf. We post-filter to titles that exist in the input set
+// so a buggy sort filter that synthesizes titles can't smuggle in new
+// tiddlers — and we append any leaves the filter dropped (preserving their
+// relative order from the input), so a partial sort doesn't silently lose
+// data. Empty result with non-empty input is treated as "filter mistake,
+// keep input order" to fail safe.
+function applyChainLeafSort(leaves, chain, wiki, widget) {
+    if (!chain.leafSort || leaves.length === 0) { return leaves; }
+    var fw = widget || $tw.rootWidget;
+    var inputSet = Object.create(null);
+    for (var i = 0; i < leaves.length; i++) { inputSet[leaves[i]] = true; }
+    var sorted;
+    try {
+        sorted = wiki.filterTiddlers(
+            chain.leafSort,
+            fw,
+            wiki.makeTiddlerIterator(leaves)
+        );
+    } catch (e) {
+        return leaves;
+    }
+    if (!sorted || sorted.length === 0) { return leaves; }
+    var out = [];
+    var seen = Object.create(null);
+    for (var j = 0; j < sorted.length; j++) {
+        var t = sorted[j];
+        if (inputSet[t] && !seen[t]) { out.push(t); seen[t] = true; }
+    }
+    // Append any input leaves the sort filter dropped, preserving their
+    // input-relative order. Keeps "buckets get all their items" invariant.
+    for (var k = 0; k < leaves.length; k++) {
+        if (!seen[leaves[k]]) { out.push(leaves[k]); seen[leaves[k]] = true; }
+    }
+    return out;
+}
+
 function buildChainNode(chain, leaves, disabled, wiki, widget, buildOpts) {
     // Chain-level leaf filter narrows the leaf set BEFORE any axis runs OR
     // sub-chain descent. Evaluated per-leaf so the user can write predicate-
     // style filters like `[get[rrt.type]match[meeting]]`.
     var chainLeaves = applyChainLeafFilter(leaves, chain, wiki, widget);
+    // Chain-level leaf sort reorders the leaf set AFTER filtering so within
+    // each axis bucket leaves appear in the sort order (groupBy preserves
+    // first-seen). The sort cascades into sub-chains too (parent's filtered+
+    // sorted leaves become the input for each sub-chain).
+    chainLeaves = applyChainLeafSort(chainLeaves, chain, wiki, widget);
     var children = [];
     if (chain.subChains && chain.subChains.length > 0) {
         // Parent chain: render each sub-chain as a synthetic child node.

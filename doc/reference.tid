@@ -72,6 +72,7 @@ The `grouped-tree` producer is for "flat entity set + multiple grouping axes" vi
 |`mm.chain-id` |Stable id (defaults to title) |
 |`mm.chain-caption` |Label of the chain's synthetic root |
 |`mm.leaf-filter` |Optional predicate-style filter narrowing the template's leaf set before any axis or sub-chain in this chain runs. Evaluated per-leaf — write `[get[rrt.type]match[meeting]]` not `:filter[...]` |
+|`mm.leaf-sort` |Optional TW filter applied to the chain's filtered leaves before they enter the axis pipeline. Input is the leaf list; output is the same list reordered. Within each axis bucket, leaves appear in this sort order (`groupBy` preserves first-seen). Examples: `[nsort[datetime]reverse[]]` (newest-first for meetings), `[has[due-date]nsort[due-date]] [!has[due-date]]` (most-urgent first, blanks last). //Fail-safe semantics//: a sort that returns empty (e.g. typo, impossible predicate) keeps input order; titles outside the input set are dropped; input leaves the sort filter drops are appended in their input-relative order so no leaf vanishes |
 |`mm.axes` |Ordered TW list of axis tiddler titles — //leaf chain// (terminal, applies the axis pipeline) |
 |`mm.sub-chains` |Ordered TW list of CHILD chain tiddler titles — //parent chain// (renders each sub-chain as a synthetic child under this chain's root; the parent's filtered leaf set cascades into every sub-chain). When both `mm.axes` and `mm.sub-chains` are set, sub-chains win |
 

@@ -527,6 +527,138 @@ describe("mindmap-grouped-tree", function () {
         });
     });
 
+    describe("produce — chain-level leaf-sort", function () {
+        function setupDatedFixtures(chainExtra) {
+            chainExtra = chainExtra || {};
+            return [
+                { title: "Axis/by-status",
+                  "mm.axis-id": "by-status",
+                  "mm.axis-field": "status" },
+                Object.assign({
+                    title: "Chain/meetings",
+                    "mm.chain-id": "meetings",
+                    "mm.chain-caption": "Meetings",
+                    "mm.leaf-filter": "[get[rrt.type]match[meeting]]",
+                    "mm.axes": "[[Axis/by-status]]"
+                }, chainExtra),
+                { title: "Template/meetings",
+                  "mm.template-caption": "Meetings",
+                  "mm.leaf-filter": "[tag[meeting]]",
+                  "mm.chains": "[[Chain/meetings]]" },
+                // Title-alphabetical order: m-a, m-b, m-c (default leaf order
+                // from wiki.filterTiddlers). Their datetimes are intentionally
+                // anti-correlated so sort-by-datetime gives a different order.
+                { title: "m-a", tags: "meeting", "rrt.type": "meeting", status: "open", datetime: "20260301000000000" },
+                { title: "m-b", tags: "meeting", "rrt.type": "meeting", status: "open", datetime: "20260101000000000" },
+                { title: "m-c", tags: "meeting", "rrt.type": "meeting", status: "open", datetime: "20260201000000000" }
+            ];
+        }
+
+        function leafTitlesUnder(node) {
+            var out = [];
+            (function walk(n) {
+                if (n.attrs && n.attrs["core:tiddler"]) { out.push(n.attrs["core:tiddler"]); }
+                (n.children || []).forEach(walk);
+            })(node);
+            return out;
+        }
+
+        it("with no leaf-sort, leaves are in input (title-alphabetical) order", function () {
+            var wiki = setupWiki(setupDatedFixtures());
+            var mdom = producer.produce({ template: "Template/meetings", "canvas-id": "c1" }, wiki);
+            // Single-chain collapse → mdom.root IS the chain. One status group: "open".
+            var statusGroup = mdom.root.children[0];
+            expect(leafTitlesUnder(statusGroup)).toEqual(["m-a", "m-b", "m-c"]);
+        });
+
+        it("nsort by datetime ascending reorders leaves inside the bucket", function () {
+            // datetime asc → m-b (Jan), m-c (Feb), m-a (Mar).
+            var wiki = setupWiki(setupDatedFixtures({ "mm.leaf-sort": "[nsort[datetime]]" }));
+            var mdom = producer.produce({ template: "Template/meetings", "canvas-id": "c1" }, wiki);
+            var statusGroup = mdom.root.children[0];
+            expect(leafTitlesUnder(statusGroup)).toEqual(["m-b", "m-c", "m-a"]);
+        });
+
+        it("nsort + reverse[] gives newest-first (the meetings use case)", function () {
+            var wiki = setupWiki(setupDatedFixtures({ "mm.leaf-sort": "[nsort[datetime]reverse[]]" }));
+            var mdom = producer.produce({ template: "Template/meetings", "canvas-id": "c1" }, wiki);
+            var statusGroup = mdom.root.children[0];
+            expect(leafTitlesUnder(statusGroup)).toEqual(["m-a", "m-c", "m-b"]);
+        });
+
+        it("preserves the sort across multiple axis buckets", function () {
+            // Mixed statuses so a date-sort affects both groups.
+            var fix = setupDatedFixtures({ "mm.leaf-sort": "[nsort[datetime]reverse[]]" });
+            // Override status to split into two groups: m-a/m-b open, m-c closed.
+            for (var i = 0; i < fix.length; i++) {
+                if (fix[i].title === "m-c") { fix[i].status = "closed"; }
+            }
+            var wiki = setupWiki(fix);
+            var mdom = producer.produce({ template: "Template/meetings", "canvas-id": "c1" }, wiki);
+            // Groups (first-seen by status): m-a → "open", m-b → "open" (already exists),
+            // m-c → "closed". But the SORT runs FIRST: leaves are m-a, m-c, m-b
+            // (Mar, Feb, Jan desc). So group order: open (m-a) then closed (m-c) then back to open (m-b).
+            // Actually groupBy preserves first-seen keys: m-a→open (new), m-c→closed (new), m-b→open (existing).
+            // → 2 groups in order [open, closed].
+            expect(mdom.root.children.length).toBe(2);
+            expect(mdom.root.children[0].attrs["gt:axis-key"]).toBe("open");
+            expect(leafTitlesUnder(mdom.root.children[0])).toEqual(["m-a", "m-b"]);
+            expect(mdom.root.children[1].attrs["gt:axis-key"]).toBe("closed");
+            expect(leafTitlesUnder(mdom.root.children[1])).toEqual(["m-c"]);
+        });
+
+        it("blanks-last pattern: [has[field]nsort[field]] [!has[field]]", function () {
+            var fix = [
+                { title: "Axis/all", "mm.axis-id": "all", "mm.axis-field": "kind" },
+                { title: "Chain/tasks", "mm.chain-id": "tasks", "mm.chain-caption": "Tasks",
+                  "mm.axes": "[[Axis/all]]",
+                  // Sort by due-date asc; tasks without due-date end up at the end.
+                  "mm.leaf-sort": "[has[due-date]nsort[due-date]] [!has[due-date]]" },
+                { title: "Template/tasks", "mm.template-caption": "Tasks",
+                  "mm.leaf-filter": "[tag[task]]",
+                  "mm.chains": "[[Chain/tasks]]" },
+                { title: "t-future", tags: "task", kind: "open", "due-date": "20260601" },
+                { title: "t-soon", tags: "task", kind: "open", "due-date": "20260201" },
+                { title: "t-none", tags: "task", kind: "open" }
+            ];
+            var wiki = setupWiki(fix);
+            var mdom = producer.produce({ template: "Template/tasks", "canvas-id": "c1" }, wiki);
+            // Single-chain → root IS the chain. One kind group: "open".
+            var group = mdom.root.children[0];
+            expect(leafTitlesUnder(group)).toEqual(["t-soon", "t-future", "t-none"]);
+        });
+
+        it("dropped leaves are appended in input order (fail-safe)", function () {
+            // Sort filter only emits m-a → m-b and m-c should be appended at end
+            // in their input-relative order.
+            var wiki = setupWiki(setupDatedFixtures({ "mm.leaf-sort": "[title[m-a]]" }));
+            var mdom = producer.produce({ template: "Template/meetings", "canvas-id": "c1" }, wiki);
+            var statusGroup = mdom.root.children[0];
+            expect(leafTitlesUnder(statusGroup)).toEqual(["m-a", "m-b", "m-c"]);
+        });
+
+        it("empty sort result with non-empty input keeps input order (fail-safe)", function () {
+            // Filter yielding nothing — typo or impossible predicate. Producer
+            // shouldn't drop all leaves; it should keep the original order.
+            var wiki = setupWiki(setupDatedFixtures({ "mm.leaf-sort": "[title[nonexistent]]" }));
+            var mdom = producer.produce({ template: "Template/meetings", "canvas-id": "c1" }, wiki);
+            var statusGroup = mdom.root.children[0];
+            expect(leafTitlesUnder(statusGroup)).toEqual(["m-a", "m-b", "m-c"]);
+        });
+
+        it("synthesized titles outside the input set are ignored", function () {
+            // A buggy filter that adds tiddler titles via [[...]] — we must
+            // not let those leak into the tree. Only leaves that ALSO survive
+            // the leaf-filter (i.e. were in the input set) reach buckets.
+            var wiki = setupWiki(setupDatedFixtures({
+                "mm.leaf-sort": "[[invented]] [[m-a]] [[m-c]] [[m-b]]"
+            }));
+            var mdom = producer.produce({ template: "Template/meetings", "canvas-id": "c1" }, wiki);
+            var statusGroup = mdom.root.children[0];
+            expect(leafTitlesUnder(statusGroup)).toEqual(["m-a", "m-c", "m-b"]);
+        });
+    });
+
     describe("produce — leaf counts on synthetic nodes", function () {
         it("emits gt:leaf-count attribute on chain root and group nodes when mm.show-counts is yes", function () {
             var fix = meetingFixtures();
