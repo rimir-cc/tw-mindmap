@@ -82,6 +82,13 @@ exports.createStore = function(wiki, title, options) {
     return {
         read: snapshot,
 
+        // Return the current in-memory pending ops if a flush hasn't fired
+        // yet, otherwise the wiki snapshot. Useful when callers need to
+        // reflect just-appended ops in UI before the debounced write lands.
+        peek: function () {
+            return pending ? pending.slice() : snapshot();
+        },
+
         // Replace the full op log atomically.
         replace: function (ops) {
             if (destroyed || !title) { return; }

@@ -68,6 +68,19 @@ The overlay is an ''ordered op log'' (JSON array in the overlay tiddler's text f
 
 Ops whose target id is absent from the current base are returned in the composer's `orphans` array. The widget surfaces a count in its toolbar; the user prunes them manually rather than silently losing work after upstream renames.
 
+!!! Two-layer overlay: saved default + live overlay
+
+The compose pipeline accepts two op layers when the view configures them (v0.2.11+):
+
+* ''Saved default'' (`mm.saved-default` field — static tiddler title). View-wide initial state. Applied first.
+* ''Live overlay'' (`mm.overlay` static title OR `mm.overlay-filter` filter-resolved title). Per-render write-target. Applied second, overrides defaults — `setAttr` is last-write-wins.
+
+`mm.overlay-filter` is the dynamic-per-entity pattern: the filter runs in the widget's variable scope, so a `<<entity>>` set by a parent `<$let>` becomes the per-entity overlay key. Empty filter result falls back to `mm.overlay`.
+
+The toolbar exposes ''💾 Save as default'' (promote current live overlay to `mm.saved-default`) and ''🔄 Reset'' (clear the per-entity overlay → fall back to default → fall back to template's `mm.initially-collapsed-*`). Both buttons disable when their target operation is a no-op, reading `store.peek()` so just-appended (debounce-pending) ops count immediately.
+
+''Gotcha for adapter authors:'' to make collapse/expand persist through the overlay, the adapter must translate engine-specific expand events into `setAttr core:collapsed` ops. In mind-elixir, that means listening to the top-level `bus.addListener("expandNode", ...)` event — it is //not// fired under the `operation` channel where structural ops live.
+
 !! Structural editing (write-back to real tiddlers)
 
 A producer can opt into ''write-back mode'' — turning the mindmap into an authoring surface for the underlying wiki, not just a display layer. The `knowledge-tree` producer is the canonical implementation.
@@ -103,6 +116,23 @@ The routing decision is per-op, not per-producer. Even on a `knowledge-tree` vie
 When an op would rename or delete more than `$:/config/rimir/mindmap/structural/cascade-threshold` (default 10) descendant tiddlers, `routeOp` returns `deferred`. The widget writes the pending op to a global state tiddler; a modal renders from it; on Confirm the widget bypasses the threshold check and applies directly.
 
 Rename in label-field mode (see below) skips the cascade check entirely — only one field on one tiddler is touched.
+
+!! Synthetic-node preview classification
+
+Producers whose tree contains non-tiddler nodes (chain roots, axis groups in `grouped-tree`; future producers may have others) can implement `previewKindForId(id) → { kind, chainId, axisKey?, keyPath? } | null`. The widget calls this on every selection; for non-null returns it writes the descriptor to `$:/state/rimir/mindmap/<key>/preview-kind` (text = `chainId`; companion fields carry `kind`, `axis-key`, `key-path`).
+
+The preview-body template tiddler (`mm.preview-body-template`) sees both signals:
+
+* `<<previewTitle>>` — backing tiddler title for leaf selections (real-tiddler nodes).
+* `<<previewKind>>` — chainId for chain selections (synthetic nodes). Empty for leaves.
+
+The template branches on `<<previewKind>>` first to render kind-specific UI — e.g. orga-apps' preview-body transcludes `entity-notes` / `entity-tasks` / `entity-meetings` view bodies so the user gets the same +new affordance and list inside the mindmap pane. Leaves fall through to the per-tiddler detail block.
+
+Only `kind === "chain"` selections currently open the pane. Axis-kind descriptors are still recorded for host templates that want to opt in.
+
+!! Allow-node-creation policy
+
+Widget attr `allow-node-creation` (default `yes`) — with view field `mm.allow-node-creation` as fallback — controls whether the engine adapter responds to native node-creation gestures (Tab → child, Enter → sibling, context-menu "Add Child"/"Add Sibling"). When `no`, the widget calls `engine.setAllowNodeCreation(false)`; engine-agnostic — adapters that implement the hook block at the keydown capture-phase AND veto in-memory placeholder operations, restoring the canvas from cached MDOM. Used by views over //synthetic-structure producers// (grouped-tree, future tag-tree etc.) where a new node has no tiddler-of-origin to inherit from.
 
 !! Focus mode
 

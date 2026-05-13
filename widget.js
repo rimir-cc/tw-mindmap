@@ -131,8 +131,7 @@ MindmapWidget.prototype.render = function (parent, nextSibling) {
         this.lastWatchedTitles = this.evaluateWatched(this.lastRefreshFilter);
 
         this.store = overlayStore.createStore(this.wiki, this.overlayTitle);
-        var ops = this.store.read();
-        var composed = composer.compose(this.lastBase, ops);
+        var composed = composer.compose(this.lastBase, this.composedOps());
         this.lastComposite = composed.mdom;
         this.lastOrphans = composed.orphans;
 
@@ -173,6 +172,10 @@ MindmapWidget.prototype.execute = function () {
     this.readonly = this.getAttribute("readonly", "") === "yes";
     this.stateAttr = trim(this.getAttribute("state", ""));
     this.onSelectActions = this.getAttribute("onSelectActions", "");
+    // Generic engine policy: native node-creation gestures (Tab/Enter in
+    // mind-elixir, equivalent in other engines). Widget attr wins; view-
+    // tiddler `mm.allow-node-creation` is the fallback. Default "yes".
+    this.allowNodeCreationAttr = trim(this.getAttribute("allow-node-creation", ""));
 
     this.errorMessage = null;
     this.producerName = null;
@@ -194,7 +197,35 @@ MindmapWidget.prototype.execute = function () {
         var f = view.fields;
         this.producerName = trim(f["mm.producer"] || "");
         this.engineName = trim(f["mm.engine"] || "");
-        this.overlayTitle = trim(f["mm.overlay"] || "");
+        // Overlay target resolution. Two-layer model:
+        //   - `mm.overlay-filter` (filter) — dynamic per-render target.
+        //     Evaluated in the widget's variable scope (parent <$let> vars
+        //     are visible — e.g. <<entity>>). First result wins. Empty/no
+        //     result falls back to the static field below.
+        //   - `mm.overlay` (literal title) — fallback / legacy single target.
+        // The widget AUTO-PERSISTS engine state (collapse/expand/setAttr) to
+        // this tiddler. Per-entity overrides come from the filter form.
+        var overlayFilter = trim(f["mm.overlay-filter"] || "");
+        if (overlayFilter) {
+            try {
+                var resolved = this.wiki.filterTiddlers(overlayFilter, this);
+                this.overlayTitle = (resolved && resolved.length > 0) ? trim(resolved[0]) : "";
+            } catch (e) {
+                this.overlayTitle = "";
+            }
+        }
+        if (!this.overlayTitle) {
+            this.overlayTitle = trim(f["mm.overlay"] || "");
+        }
+        // Saved-default target. A STATIC tiddler title (no filter) — view-
+        // wide initial state applied BEFORE overlay ops, so the per-entity
+        // overlay (when present) overrides the default. The toolbar's "Save
+        // as default" promotes the current overlay's contents to this target.
+        this.savedDefaultTitle = trim(f["mm.saved-default"] || "");
+        // Optional: tiddler whose body renders the preview pane in body-mode.
+        // Receives `previewTitle` in scope (the selected node's backing tiddler).
+        // Default falls back to the standard rr-text-view-editable.
+        this.previewBodyTemplate = trim(f["mm.preview-body-template"] || "");
         try {
             this.producerArgs = f["mm.args"] ? JSON.parse(f["mm.args"]) : {};
         } catch (e) {
@@ -238,6 +269,26 @@ MindmapWidget.prototype.execute = function () {
         this.errorMessage = "View tiddler missing mm.producer field.";
         return;
     }
+};
+
+// Pure: decide allow-node-creation from (attr value, view-field value).
+// Both inputs are strings ("yes", "no", or empty/anything-else). Widget attr
+// wins over view field; default when neither is "yes"/"no" is true.
+function resolveAllowNodeCreation(attrValue, viewFieldValue) {
+    if (attrValue === "no") { return false; }
+    if (attrValue === "yes") { return true; }
+    if (viewFieldValue === "no") { return false; }
+    if (viewFieldValue === "yes") { return true; }
+    return true;
+}
+
+MindmapWidget.prototype.allowNodeCreation = function () {
+    var viewField = "";
+    if (this.viewAttr) {
+        var view = this.wiki.getTiddler(this.viewAttr);
+        if (view) { viewField = trim(view.fields["mm.allow-node-creation"] || ""); }
+    }
+    return resolveAllowNodeCreation(this.allowNodeCreationAttr, viewField);
 };
 
 // Session-only state tiddler holding the currently-focused subtree's title.
@@ -374,7 +425,31 @@ MindmapWidget.prototype.effectiveProducerArgs = function () {
     var labelField = this.currentLabelField();
     if (labelField && labelField !== "title") { args["label-field"] = labelField; }
     if (this.currentSlidesOnly()) { args["slides-only"] = "yes"; }
+    var rootLabel = this.resolveRootLabel();
+    if (rootLabel) { args["root-label"] = rootLabel; }
     return args;
+};
+
+// View-tiddler `mm.root-label` resolves the visible label of the MDOM root.
+// Two evaluation modes (matching mm.axis-label-template):
+//   - Literal: any non-empty string starting with anything other than `[`
+//   - Filter:  starts with `[`. Evaluated in the widget's variable scope so
+//              parent `<$let entity=…>` variables are visible. First result
+//              wins; empty result falls through to the producer's default.
+// Returns empty string when unset or unresolvable.
+MindmapWidget.prototype.resolveRootLabel = function () {
+    if (!this.viewAttr) { return ""; }
+    var view = this.wiki.getTiddler(this.viewAttr);
+    if (!view) { return ""; }
+    var expr = trim(view.fields["mm.root-label"] || "");
+    if (!expr) { return ""; }
+    if (expr.charAt(0) !== "[") { return expr; }
+    try {
+        var out = this.wiki.filterTiddlers(expr, this);
+        return (out && out.length > 0) ? out[0] : "";
+    } catch (e) {
+        return "";
+    }
 };
 
 MindmapWidget.prototype.produceBase = function () {
@@ -443,6 +518,14 @@ MindmapWidget.prototype.initEngine = function () {
     if (typeof instance.setStructural === "function") {
         instance.setStructural(isStructural);
     }
+    // Engine-agnostic policy toggle: when the host (view config or widget
+    // attr) disables node creation, the engine adapter must swallow its
+    // native Tab/Enter (or equivalent) gestures so a read-only/structural-
+    // view canvas doesn't silently create placeholder nodes the user can't
+    // commit. Engines that don't implement the method ignore the call.
+    if (typeof instance.setAllowNodeCreation === "function") {
+        instance.setAllowNodeCreation(this.allowNodeCreation());
+    }
     if (typeof instance.on === "function") {
         var self = this;
         instance.on("op", function (op) { self.handleEngineOp(op); });
@@ -470,7 +553,14 @@ MindmapWidget.prototype.handleEngineOp = function (op) {
             this.applyStructuralOp(op, producer);
             break;
         case "overlay":
-            if (this.store) { this.store.append(op); }
+            if (this.store) {
+                this.store.append(op);
+                // Reflect just-appended ops in the toolbar buttons before
+                // the debounced wiki write completes — users get instant
+                // visual feedback that the per-entity state diverges from
+                // the saved default.
+                this.updateSavedStateButtons();
+            }
             break;
         case "deferred":
             this.requestCascadeConfirm(op, routing.count);
@@ -502,6 +592,16 @@ MindmapWidget.prototype.previewStateTitle = function () {
 MindmapWidget.prototype.previewEditStateTitle = function () {
     var key = this.stateAttr || this.viewAttr || this.filterAttr || "default";
     return "$:/state/rimir/mindmap/" + key + "/preview-edit-state";
+};
+
+// Per-widget state tiddler holding the currently-selected synthetic node's
+// "preview kind" descriptor. Producers that classify synthetic nodes (e.g.
+// grouped-tree's chain / axis roots) expose `previewKindForId(id)` returning
+// an object whose `chainId` (and `axisKey`, `keyPath`) end up in this state
+// + companion fields. Empty when the selection is a leaf or unclassified.
+MindmapWidget.prototype.previewKindStateTitle = function () {
+    var key = this.stateAttr || this.viewAttr || this.filterAttr || "default";
+    return "$:/state/rimir/mindmap/" + key + "/preview-kind";
 };
 
 // Build the preview pane's two layers:
@@ -556,14 +656,23 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
     this.updateModebarTitle();
     this.populateModebarSelect();
 
-    // Wikitext below the modebar branches on inspect-mode.
+    // Wikitext below the modebar branches on inspect-mode. Two signals
+    // determine what the pane renders in non-presentation modes:
+    //   previewTitle : non-blank leaf-selection backing tiddler
+    //   previewKind  : non-blank synthetic-node classifier (chainId)
+    // previewKind takes precedence for the body-template branch — the host
+    // template (mm.preview-body-template) is responsible for branching on
+    // <<previewKind>> first, falling through to <<previewTitle>>.
     var wikitext =
         "<$set name='previewTitle' filter='[<__state__>get[text]]'>" +
+        "<$set name='previewKind' filter='[<__kindstate__>get[text]]'>" +
+        "<$set name='previewKindAxisKey' filter='[<__kindstate__>get[axis-key]]'>" +
+        "<$set name='previewKindKeyPath' filter='[<__kindstate__>get[key-path]]'>" +
         "<$let inspectMode={{{ [<__inspectstate__>get[text]] }}}>" +
         "<%if [<inspectMode>match[presentation]] %>" +
         "<$transclude $variable='mm-presentation-pane' previewTitle=<<previewTitle>> stateKey=<<__statekey__>> viewTitle=<<__viewtitle__>>/>" +
         "<%else%>" +
-        "<$list filter='[<previewTitle>!is[blank]is[tiddler]]' variable='_' " +
+        "<$list filter='[<previewTitle>!is[blank]is[tiddler]] [<previewKind>!is[blank]]' variable='_' " +
         "emptyMessage=\"\"\"<div class='rr-mindmap-preview-empty'>Select a node in the canvas to inspect it.</div>\"\"\">" +
         "<%if [<inspectMode>match[slides]] %>" +
         "<$transclude $variable='mm-slide-pane' previewTitle=<<previewTitle>> stateKey=<<__statekey__>>/>" +
@@ -579,9 +688,17 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
         "</$keyboard>" +
         "</$keyboard>" +
         "<%else%>" +
+        "<%if [<__bodytemplate__>!is[blank]] %>" +
+        "<$transclude $tiddler=<<__bodytemplate__>> $mode='block'/>" +
+        "<%else%>" +
+        "<%if [<previewKind>!is[blank]] %>" +
+        "<div class='rr-mindmap-preview-empty'>No preview template configured for kind: <$text text=<<previewKind>>/></div>" +
+        "<%else%>" +
         "<$let viewTiddler=<<previewTitle>>>" +
         "<$transclude $tiddler='$:/plugins/rimir/theme/rr-text-view-editable' $mode='block'/>" +
         "</$let>" +
+        "<%endif%>" +
+        "<%endif%>" +
         "<%endif%>" +
         "</div>" +
         "</$let>" +
@@ -589,6 +706,9 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
         "</$list>" +
         "<%endif%>" +
         "</$let>" +
+        "</$set>" +
+        "</$set>" +
+        "</$set>" +
         "</$set>";
     var parser = this.wiki.parseText("text/vnd.tiddlywiki", wikitext, { parseAsInline: false });
     if (!parser) { return; }
@@ -599,21 +719,26 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
             __state__: this.previewStateTitle(),
             __editstate__: this.previewEditStateTitle(),
             __inspectstate__: this.inspectModeStateTitle(),
+            __kindstate__: this.previewKindStateTitle(),
             __statekey__: this.previewStateKey(),
-            __viewtitle__: this.viewAttr || ""
+            __viewtitle__: this.viewAttr || "",
+            __bodytemplate__: this.previewBodyTemplate || ""
         }
     });
     widgetNode.render(this.previewContent, null);
     this.previewWidget = widgetNode;
 };
 
-// Update the modebar title span to reflect the currently-selected tiddler.
+// Update the modebar title span to reflect the currently-selected tiddler
+// or — for synthetic-node selections — the producer-supplied kind label.
 MindmapWidget.prototype.updateModebarTitle = function () {
     if (!this.modebarTitle) { return; }
     var title = this.selectedBackingTitle();
-    if (title) {
-        this.modebarTitle.textContent = title;
-        this.modebarTitle.title = title;
+    var kindId = title ? "" : this.currentPreviewKindId();
+    var label = title || (kindId ? kindId : "");
+    if (label) {
+        this.modebarTitle.textContent = label;
+        this.modebarTitle.title = label;
         this.modebarTitle.classList.remove("rr-mindmap-preview-modebar-empty");
     } else {
         this.modebarTitle.textContent = "(no selection)";
@@ -757,22 +882,50 @@ MindmapWidget.prototype.createPresentationAndActivate = function () {
     }));
 };
 
-// Update the preview-state tiddler to reflect the currently-selected node's
-// backing title. Empty string when no real tiddler is selected → preview pane
-// content collapses to nothing (via $list filter), and the pane itself can
-// hide via CSS.
+// Update the preview-state tiddlers to reflect the currently-selected node.
+// Two parallel signals:
+//   - preview-title : backing tiddler title when the selection is a leaf
+//   - preview-kind  : producer-classified descriptor for synthetic nodes
+//                     (chain root, axis group). text=chainId for branching;
+//                     companion fields carry the rest of the descriptor.
+// Either signal triggers the preview pane to open. A given selection
+// populates at most one of the two — leaves write title; synthetic nodes
+// write kind. updatePreviewPaneVisibility treats either as "show me".
 MindmapWidget.prototype.updatePreviewState = function (nodeId) {
     var stateTitle = this.previewStateTitle();
+    var kindTitle = this.previewKindStateTitle();
     var producer = findProducerByName(this.producerName);
     var title = "";
-    if (nodeId && producer && typeof producer.titleForOp === "function") {
-        var t = producer.titleForOp({ op: "rename", id: nodeId });
-        if (t && this.wiki.getTiddler(t)) { title = t; }
+    var kindFields = { title: kindTitle, text: "" };
+    if (nodeId && producer) {
+        // Leaves first: a backing tiddler beats a chain classification (e.g.
+        // a future producer might tag leaves with a kind too, but its tiddler
+        // is what the user wants to see).
+        if (typeof producer.titleForOp === "function") {
+            var t = producer.titleForOp({ op: "rename", id: nodeId });
+            if (t && this.wiki.getTiddler(t)) { title = t; }
+        }
+        if (!title && typeof producer.previewKindForId === "function") {
+            try {
+                var pk = producer.previewKindForId(nodeId);
+                // Only `chain` selections currently trigger a pane preview.
+                // Axis-group selections have no natural kind-view yet — the
+                // descriptor is still recorded (kind="axis") so future host
+                // templates can opt in, but pane visibility ignores it.
+                if (pk && pk.kind === "chain" && pk.chainId) {
+                    kindFields.text = pk.chainId;
+                    kindFields.kind = pk.kind;
+                    kindFields["axis-key"] = pk.axisKey || "";
+                    kindFields["key-path"] = pk.keyPath || "";
+                }
+            } catch (e) { /* producer bug — ignore, pane stays unchanged */ }
+        }
     }
     this.wiki.addTiddler(new $tw.Tiddler({
         title: stateTitle,
         text: title
     }));
+    this.wiki.addTiddler(new $tw.Tiddler(kindFields));
     // Switching nodes always exits inline-edit mode (the active edit was on
     // the prior node; staying in edit mode would now point at a different
     // tiddler's text).
@@ -781,6 +934,12 @@ MindmapWidget.prototype.updatePreviewState = function (nodeId) {
         text: ""
     }));
     this.updatePreviewPaneVisibility();
+};
+
+// True iff the producer classified the current selection as a synthetic kind
+// (chain/axis). Used by pane-visibility and modebar-title logic.
+MindmapWidget.prototype.currentPreviewKindId = function () {
+    return trim(this.wiki.getTiddlerText(this.previewKindStateTitle(), ""));
 };
 
 // Pure decision: should the preview pane be visible right now?
@@ -800,7 +959,15 @@ function isPreviewPaneVisible(mode, hasSelection, hasPresentation) {
 
 MindmapWidget.prototype.updatePreviewPaneVisibility = function () {
     if (!this.previewPane) { return; }
-    var hasSelection = !!(this.selectedNodeId && this.selectedBackingTitle());
+    // "Selection" for pane purposes = a real tiddler title OR a synthetic
+    // preview-kind. Either gives the preview pane something meaningful to
+    // render (leaf body vs. chain "kind view"). For mode-specific rules,
+    // see isPreviewPaneVisible — only the third arg (hasSelection) widens.
+    var hasSelection = !!(
+        this.selectedNodeId && (
+            this.selectedBackingTitle() || this.currentPreviewKindId()
+        )
+    );
     var mode = this.currentInspectMode();
     var hasPresentation = !!this.currentPresentationTitle();
     // "View" toggle pins the pane open unconditionally. Otherwise fall back
@@ -1027,14 +1194,40 @@ MindmapWidget.prototype.handleSelect = function (nodeId) {
 
 MindmapWidget.prototype.recompose = function () {
     if (!this.lastBase) { return; }
-    var ops = this.store ? this.store.read() : [];
-    var composed = composer.compose(this.lastBase, ops);
+    var composed = composer.compose(this.lastBase, this.composedOps());
     this.lastComposite = composed.mdom;
     this.lastOrphans = composed.orphans;
     if (this.engineInstance && typeof this.engineInstance.update === "function") {
         this.engineInstance.update(this.lastComposite);
     }
     this.updateToolbar();
+};
+
+// Pure: merge a saved-default op log and a live-overlay op log into the
+// ordered list compose() expects. Defaults apply first, overlay overrides —
+// `setAttr` is last-write-wins, so a per-entity override always beats the
+// view-wide default for the same id/key. Either side may be undefined/null
+// (returns the other) or empty (returns the other).
+function mergeSavedAndOverlay(defaults, overlay) {
+    var d = Array.isArray(defaults) ? defaults : [];
+    var o = Array.isArray(overlay) ? overlay : [];
+    if (d.length === 0) { return o; }
+    if (o.length === 0) { return d; }
+    return d.concat(o);
+}
+
+// Build the ordered op log that composes the engine view from the base MDOM.
+// See mergeSavedAndOverlay for the precedence rules. Uses `peek()` so a
+// debounce-pending overlay op is visible to compose() immediately —
+// otherwise a recompose() between user-toggle and the 250ms flush would
+// rebuild the engine with the OLD overlay, snapping a just-collapsed node
+// back to expanded for a quarter second.
+MindmapWidget.prototype.composedOps = function () {
+    var defaults = this.savedDefaultTitle
+        ? overlayStore.readOps(this.wiki, this.savedDefaultTitle)
+        : [];
+    var live = this.store ? this.store.peek() : [];
+    return mergeSavedAndOverlay(defaults, live);
 };
 
 MindmapWidget.prototype.reproduce = function () {
@@ -1225,6 +1418,15 @@ MindmapWidget.prototype.refresh = function (changedTiddlers) {
     }
     if (this.overlayTitle && changedTiddlers[this.overlayTitle]) {
         this.recompose();
+        this.updateSavedStateButtons();
+        this.forwardPreviewRefresh(changedTiddlers);
+        return true;
+    }
+    // Saved-default tiddler edited externally (or by our save action). Re-
+    // compose so the default layer reflects the new ops.
+    if (this.savedDefaultTitle && changedTiddlers[this.savedDefaultTitle]) {
+        this.recompose();
+        this.updateSavedStateButtons();
         this.forwardPreviewRefresh(changedTiddlers);
         return true;
     }
@@ -1297,6 +1499,40 @@ MindmapWidget.prototype.renderToolbar = function () {
         });
         this.toolbarNode.appendChild(this.viewPinBtn);
         this.updateViewPinButton();
+    }
+
+    // Saved-state controls. Visible only when the view configures persistent
+    // state (overlayTitle for the per-entity layer, savedDefaultTitle for
+    // the view-wide default).
+    //   - "Save as default" promotes current overlay ops into the saved-
+    //     default tiddler. After this, any view-instance with no per-entity
+    //     overlay ops starts from this state.
+    //   - "Reset" clears the per-entity overlay tiddler so the canvas falls
+    //     back to the saved default (or, if none, to template-defined
+    //     initial-collapsed config).
+    if (this.savedDefaultTitle) {
+        this.saveDefaultBtn = this.document.createElement("button");
+        this.saveDefaultBtn.type = "button";
+        this.saveDefaultBtn.className = "rr-mindmap-toolbar-toggle rr-mindmap-save-default-btn";
+        this.saveDefaultBtn.textContent = "💾 Save as default";
+        this.saveDefaultBtn.title = "Snapshot the current view state (which branches are collapsed, etc.) as the default applied to any entity that hasn't been customised";
+        var saveSelf = this;
+        this.saveDefaultBtn.addEventListener("click", function () {
+            saveSelf.saveCurrentAsDefault();
+        });
+        this.toolbarNode.appendChild(this.saveDefaultBtn);
+    }
+    if (this.overlayTitle) {
+        this.resetOverlayBtn = this.document.createElement("button");
+        this.resetOverlayBtn.type = "button";
+        this.resetOverlayBtn.className = "rr-mindmap-toolbar-toggle rr-mindmap-reset-overlay-btn";
+        this.resetOverlayBtn.textContent = "🔄 Reset";
+        this.resetOverlayBtn.title = "Discard per-entity state and revert to the saved default (or, if none, to template defaults)";
+        var resetSelf = this;
+        this.resetOverlayBtn.addEventListener("click", function () {
+            resetSelf.resetEntityOverlay();
+        });
+        this.toolbarNode.appendChild(this.resetOverlayBtn);
     }
 
     this.orphanBadge = this.document.createElement("button");
@@ -1672,15 +1908,65 @@ MindmapWidget.prototype.handleEditSelected = function () {
 };
 
 MindmapWidget.prototype.updateToolbar = function () {
-    if (!this.orphanBadge) { return; }
-    var n = (this.lastOrphans || []).length;
-    if (n > 0) {
-        this.orphanBadge.textContent = "⚠ " + n + " orphan op" + (n === 1 ? "" : "s");
-        this.orphanBadge.title = "Overlay ops whose target id is missing from the current base — typically left over from a tiddler rename or reparent. Click to prune (irreversible).";
-        this.orphanBadge.style.display = "";
-    } else {
-        this.orphanBadge.style.display = "none";
+    if (this.orphanBadge) {
+        var n = (this.lastOrphans || []).length;
+        if (n > 0) {
+            this.orphanBadge.textContent = "⚠ " + n + " orphan op" + (n === 1 ? "" : "s");
+            this.orphanBadge.title = "Overlay ops whose target id is missing from the current base — typically left over from a tiddler rename or reparent. Click to prune (irreversible).";
+            this.orphanBadge.style.display = "";
+        } else {
+            this.orphanBadge.style.display = "none";
+        }
     }
+    this.updateSavedStateButtons();
+};
+
+// Saved-default + reset buttons share their enabled state with the actual
+// content of the underlying tiddlers — there's nothing to save when the
+// overlay is empty, and nothing to reset when there's no per-entity layer.
+// Reflect that here so users get visual feedback that the gesture is no-op
+// before they click. Uses `peek()` so just-appended (in-memory, debounce-
+// pending) ops count immediately, not only after the wiki write lands.
+MindmapWidget.prototype.updateSavedStateButtons = function () {
+    var live = this.store ? this.store.peek() : [];
+    if (this.saveDefaultBtn) {
+        var current = this.savedDefaultTitle
+            ? overlayStore.readOps(this.wiki, this.savedDefaultTitle)
+            : [];
+        var sameAsDefault = JSON.stringify(live) === JSON.stringify(current);
+        this.saveDefaultBtn.disabled = sameAsDefault;
+        this.saveDefaultBtn.classList.toggle("rr-mindmap-toolbar-toggle-disabled", sameAsDefault);
+    }
+    if (this.resetOverlayBtn) {
+        var hasLive = live.length > 0;
+        this.resetOverlayBtn.disabled = !hasLive;
+        this.resetOverlayBtn.classList.toggle("rr-mindmap-toolbar-toggle-disabled", !hasLive);
+    }
+};
+
+// Copy the current per-entity overlay into the view-wide saved-default
+// tiddler. After this, any view-instance whose overlay is empty (e.g. a
+// freshly-opened entity that's never been touched) renders with this state.
+// Idempotent: if the default already matches the overlay, a no-op write
+// still goes through; the comparison happens at the button-enabled level.
+// We peek() rather than read() so a just-appended op that hasn't flushed
+// yet still makes it into the snapshot — the user expects "Save" to capture
+// the visible state.
+MindmapWidget.prototype.saveCurrentAsDefault = function () {
+    if (!this.savedDefaultTitle) { return; }
+    var ops = this.store ? this.store.peek() : [];
+    overlayStore.writeOps(this.wiki, this.savedDefaultTitle, ops);
+    this.updateSavedStateButtons();
+};
+
+// Clear the per-entity overlay tiddler. The canvas falls back to the
+// saved-default (if configured) or the template's initially-collapsed-*
+// config. Doesn't touch the saved-default itself.
+MindmapWidget.prototype.resetEntityOverlay = function () {
+    if (!this.overlayTitle || !this.store) { return; }
+    this.store.replace([]);
+    this.store.flush();
+    this.updateSavedStateButtons();
 };
 
 // Drop the orphan ops from the overlay store. Indices recorded by compose
@@ -1790,3 +2076,5 @@ exports.mindmap = MindmapWidget;
 // Exposed for unit tests — pure decision functions extracted from widget
 // instance methods so their behaviour can be pinned without DOM rendering.
 exports._isPreviewPaneVisible = isPreviewPaneVisible;
+exports._resolveAllowNodeCreation = resolveAllowNodeCreation;
+exports._mergeSavedAndOverlay = mergeSavedAndOverlay;

@@ -24,6 +24,7 @@ type: text/vnd.tiddlywiki
 |`readonly` |`no` |If `yes`, user gestures do not write to the overlay |
 |`state` |— |State-tiddler prefix for engine-internal UI state (reserved) |
 |`onSelectActions` |— |Action string invoked on node selection; receives `<<nodeId>>` |
+|`allow-node-creation` |`yes` |`no` to suppress the engine's native node-creation gestures (Tab → child, Enter → sibling, context-menu "Add Child"/"Add Sibling"). Useful for read-only / synthetic-structure views (e.g. `grouped-tree`) where new nodes have no tiddler-of-origin. View-tiddler `mm.allow-node-creation` is the fallback |
 
 Setting both `view` and `filter` is a configuration error and renders an error banner.
 
@@ -32,13 +33,79 @@ Setting both `view` and `filter` is a configuration error and renders an error b
 |!Field |!Required |!Purpose |
 |`mm.producer` |yes |Name of a registered `mindmap-producer` |
 |`mm.args` |yes (JSON object) |Arguments passed to the producer |
-|`mm.overlay` |no |Overlay tiddler title |
+|`mm.overlay` |no |Overlay tiddler title. Static; persists the engine's setAttr / reorder / hide ops (collapse/expand state, etc.). When `mm.overlay-filter` resolves to a non-empty title that one wins instead |
+|`mm.overlay-filter` |no |TW filter evaluated in the widget's variable scope; the first result becomes the per-render overlay tiddler title. Use for per-entity persistence: with `<<entity>>` set by a parent `<$let>`, write `[<entity>!is[blank]addprefix[$:/saved-state/myplugin/]]`. Empty result falls back to `mm.overlay` |
+|`mm.saved-default` |no |Static tiddler title holding the //view-wide// saved default state (a JSON array of overlay ops). Applied BEFORE the per-entity overlay at compose time — overlay ops override defaults. Toolbar's ''Save as default'' promotes the current overlay into this target. Without this field the toolbar's save / reset buttons are hidden |
 |`mm.engine` |no |Engine name override |
 |`mm.options` |no (JSON object) |Engine-specific options |
 |`mm.id-aliases` |no (JSON object) |Old-id → new-id rescue map applied before composition |
 |`mm.focus` |no |Initial focus title — re-roots the MDOM at that subtree on first render |
 |`mm.label-field` |no |Tiddler field driving the visible node label. Default `title` uses the leaf-segment of the title; `caption` (or any field) decouples display from structural identity |
 |`mm.presentation` |no |Title of the currently-active presentation tiddler for this view. Empty means "no presentation". Written by the preview-pane modebar dropdown when the user picks a presentation |
+|`mm.allow-node-creation` |no |`yes` / `no`. Overridden by widget attr `allow-node-creation` when set. When `no`, the engine swallows native node-creation gestures (Tab/Enter and context-menu "Add Child"). Engine-agnostic — engines implement `setAllowNodeCreation(bool)` |
+|`mm.root-label` |no |Override the producer's natural root label. ''Literal mode'': any non-empty string //not// starting with `[`. ''Filter mode'': starts with `[`. Evaluated in the widget's variable scope (parent `<$let>` variables are visible — write `[<entity>get[caption]] ~[<entity>]` to use the surrounding entity's caption). First filter result wins; empty falls back to the producer's default |
+|`mm.preview-body-template` |no |Title of a wikitext tiddler rendered in the right pane's Body mode in place of the default text-view. Receives variables `<<previewTitle>>` (leaf selection's backing title), `<<previewKind>>` (synthetic-node chainId — empty for leaves), `<<previewKindAxisKey>>`, `<<previewKindKeyPath>>`. Branch on `previewKind` first to render kind-specific UI for chain/axis selections |
+
+!! Grouped-tree producer args
+
+The `grouped-tree` producer is for "flat entity set + multiple grouping axes" views — e.g. meetings grouped by year/month and separately by state. Structural nodes are //volatile//: they have no tiddler of origin and are derived from leaves' field values. The shape of a view is declared by an ''axis template''.
+
+|!Arg |!Default |!Purpose |
+|`template` |— |//Required.// Title of the axis-template tiddler |
+|`canvas-id` |`default` |Logical canvas key; scopes the runtime ''axes-disabled'' state tiddler. Multiple canvases sharing one template each keep their own toggle state |
+
+!!! Template tiddler
+
+|!Field |!Purpose |
+|`mm.template-id` |Stable id (defaults to title) |
+|`mm.template-caption` |Visible label of the root |
+|`mm.leaf-filter` |//Required.// TW filter producing the leaf set |
+|`mm.chains` |Ordered TW list of chain tiddler titles. Single chain → root collapses to the chain; multi-chain → synthetic root above the chain roots |
+|`mm.initially-disabled-axes` |TW list of //axis-ids// (NOT titles) initially toggled off. Overridden at runtime by the state tiddler |
+|`mm.initially-collapsed-axes` |TW list of //axis-ids// whose group nodes render collapsed (`core:collapsed: true`) on first draw |
+|`mm.initially-collapsed-chains` |TW list of //chain-ids// whose chain-root renders collapsed on first draw |
+|`mm.show-counts` |`yes` to append ` (N)` to every synthetic node's label, where N is the descendant leaf count. Each synthetic node also carries `gt:leaf-count` for engines that want to render counts separately |
+
+!!! Chain tiddler
+
+|!Field |!Purpose |
+|`mm.chain-id` |Stable id (defaults to title) |
+|`mm.chain-caption` |Label of the chain's synthetic root |
+|`mm.leaf-filter` |Optional predicate-style filter narrowing the template's leaf set before any axis or sub-chain in this chain runs. Evaluated per-leaf — write `[get[rrt.type]match[meeting]]` not `:filter[...]` |
+|`mm.axes` |Ordered TW list of axis tiddler titles — //leaf chain// (terminal, applies the axis pipeline) |
+|`mm.sub-chains` |Ordered TW list of CHILD chain tiddler titles — //parent chain// (renders each sub-chain as a synthetic child under this chain's root; the parent's filtered leaf set cascades into every sub-chain). When both `mm.axes` and `mm.sub-chains` are set, sub-chains win |
+
+!!! Axis tiddler
+
+|!Field |!Purpose |
+|`mm.axis-id` |//Required.// Stable id referenced from `mm.initially-disabled-axes` and the runtime state tiddler |
+|`mm.axis-caption` |Human-readable label of the axis (not yet rendered in the canvas) |
+|`mm.axis-field` |Leaf field whose value is the group key. Used when `mm.axis-derive` is absent |
+|`mm.axis-derive` |TW filter computing the key from the leaf (currentTiddler = leaf title; first result wins). Overrides `mm.axis-field` when both present |
+|`mm.axis-label-template` |Label template for the group node. ''Literal mode'' (default): `<<key>>` is substituted with the raw key. ''Filter mode'' (starts with `[`): evaluated as a TW filter with the `key` variable bound; first result becomes the label. Falls back to the raw key when the filter yields nothing |
+|`mm.axis-create-defaults` |JSON field→value map applied when a leaf is created under this axis (Phase B — not yet active) |
+|`mm.axis-leaf-filter` |Optional filter; leaves failing this filter are dropped from the chain at this depth |
+|`mm.axis-sort` |Sort order for the axis's group nodes: `first-seen` (default — insertion order), `asc` (alpha), `desc` (alpha reversed — useful for dates newest-first), `enum` (explicit order via `mm.axis-sort-keys`) |
+|`mm.axis-sort-keys` |For `mm.axis-sort: enum`. Ordered TW list of expected key values. Keys not listed sort after the enum in alphabetical order |
+
+!!! Runtime override
+
+Toggling an axis at runtime writes a session-scoped state tiddler:
+
+```
+$:/state/rimir/mindmap/<canvas-id>/axes-disabled
+```
+
+Body is a TW list of axis-ids. ''When present, it fully replaces the template's `initially-disabled-axes`'' — no merge. Absence falls back to the template defaults. `$:/state/` tiddlers don't sync, so this keeps git clean.
+
+!!! Node id namespaces
+
+|!Pattern |!Used for |
+|`gt:__root__` |Synthetic root (multi-chain only) |
+|`gt:__empty__` |Empty / error placeholder root |
+|`gt:chain:<chainId>` |Chain synthetic root |
+|`gt:axis:<chainId>:<keyPath>` |Axis group node. `<keyPath>` is the pipe-joined cumulative axis-key path from the chain root, so the same key under different ancestors (e.g. "Jan" under 2026 vs 2025) yields distinct ids. The current axis-id is preserved in the `gt:axis-id` attr |
+|`gt:leaf:<title>@<chainId>` |Leaf //occurrence//. The same tiddler appears once per chain; `core:tiddler` attr carries the underlying title |
 
 !! Knowledge-tree producer args
 
@@ -68,7 +135,12 @@ exports.applyOps       = function (ops, args, wiki) → results[]; // mutates th
 exports.titleForOp     = function (op) → string|null;            // for cascade counting
 exports.idForTitle     = function (title) → string|null;         // inverse of titleForOp; used by presentation click-to-select
 exports.rootTitle      = function (args) → string|null;          // for step-out detection
+
+// Synthetic-node preview classifier — opt-in:
+exports.previewKindForId = function (id) → { kind, chainId, axisKey?, keyPath? } | null;
 ```
+
+A producer that emits structural nodes that aren't tiddlers (chain roots, axis groups, etc.) can implement `previewKindForId`. When the user selects such a node, the widget writes the returned descriptor to `$:/state/rimir/mindmap/<key>/preview-kind` and the host preview-body template can branch on `<<previewKind>>` (the `chainId`) to render kind-specific UI — e.g. the same list view the user sees on a dedicated tab. Leaf selections continue to populate `<<previewTitle>>`.
 
 Producers MUST emit deterministic node IDs (prefixed with a producer-unique namespace). IDs are the join key between base and overlay.
 

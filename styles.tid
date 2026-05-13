@@ -187,6 +187,15 @@ type: text/vnd.tiddlywiki
     color: <<colour background>>;
     opacity: 0.9;
 }
+.rr-mindmap-toolbar-toggle.rr-mindmap-toolbar-toggle-disabled,
+.rr-mindmap-toolbar-toggle[disabled] {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.rr-mindmap-toolbar-toggle.rr-mindmap-toolbar-toggle-disabled:hover,
+.rr-mindmap-toolbar-toggle[disabled]:hover {
+    background: transparent;
+}
 
 /* Cascade-confirm modal. Self-contained: defines its own page-darkening +
    centering layer (does NOT rely on kn-modal-overlay cascade) so a missing
