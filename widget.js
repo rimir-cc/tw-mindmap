@@ -745,25 +745,27 @@ MindmapWidget.prototype.updatePreviewState = function (nodeId) {
     this.updatePreviewPaneVisibility();
 };
 
-// Show the preview pane when there's content for the active inspect-mode to
-// render. The previous version (v0.2.6) kept the pane visible whenever a
-// presentation was active on the view — but in Body / Slides modes that
-// pinned the pane open even with no selection, blocking the canvas from
-// reclaiming full width. The fix: visibility is mode-aware.
-//   - body / slides: needs a selection
-//   - presentation:  needs an active presentation (selection optional)
-// To switch into Presentation mode without a selection, select any node so
-// the modebar appears, then pick the presentation from the dropdown.
+// Pure decision: should the preview pane be visible right now?
+// Extracted from updatePreviewPaneVisibility so the rule can be unit-tested
+// without rendering the widget. Pinned by test-preview-visibility specs.
+//
+// Rule (v0.2.9+):
+//   - body / slides: visible iff a node is selected (presence of an active
+//     presentation MUST NOT pin the pane open in these modes — the v0.2.6
+//     logic did, and that's the regression we're guarding against).
+//   - presentation:  visible iff an active presentation exists (selection
+//     optional — the playlist is whole-view).
+function isPreviewPaneVisible(mode, hasSelection, hasPresentation) {
+    if (mode === "presentation") { return !!hasPresentation; }
+    return !!hasSelection;
+}
+
 MindmapWidget.prototype.updatePreviewPaneVisibility = function () {
     if (!this.previewPane) { return; }
     var hasSelection = !!(this.selectedNodeId && this.selectedBackingTitle());
     var mode = this.currentInspectMode();
-    var visible;
-    if (mode === "presentation") {
-        visible = !!this.currentPresentationTitle();
-    } else {
-        visible = hasSelection;
-    }
+    var hasPresentation = !!this.currentPresentationTitle();
+    var visible = isPreviewPaneVisible(mode, hasSelection, hasPresentation);
     this.previewPane.style.display = visible ? "" : "none";
 };
 
@@ -1631,3 +1633,7 @@ MindmapWidget.prototype.destroy = function () {
 };
 
 exports.mindmap = MindmapWidget;
+
+// Exposed for unit tests — pure decision functions extracted from widget
+// instance methods so their behaviour can be pinned without DOM rendering.
+exports._isPreviewPaneVisible = isPreviewPaneVisible;
