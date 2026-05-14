@@ -525,6 +525,48 @@ describe("mindmap-grouped-tree", function () {
             collectLeaves(meetingsChain, meetingTitles);
             expect(meetingTitles).toEqual(jasmine.arrayWithExactContents(["m1", "m2"]));
         });
+
+        // Regression pin for the gotcha that bit orga-apps' Topics chain:
+        // in a chain `mm.leaf-filter`, the leaf comes in via the SOURCE
+        // iterator. Leading a run with `<currentTiddler>` makes the run
+        // resolve currentTiddler from the OUTER widget — not the leaf — so
+        // the filter silently rejects every leaf. The two specs below pin
+        // both the correct implicit-source form AND the broken explicit form
+        // so a future contributor refactoring the producer cannot accidentally
+        // swap the implicit input for a `<currentTiddler>` lookup.
+        it("regression: chain leaf-filter receives the leaf via the source iterator", function () {
+            // Filter uses implicit source: `[get[rrt.type]match[meeting]]`.
+            // Run on each leaf in isolation, with the leaf as the source's
+            // single item — so `get[rrt.type]` reads the leaf's field directly.
+            var wiki = setupWiki(setupMixedFixtures());
+            var mdom = producer.produce({ template: "Template/mixed", "canvas-id": "c1" }, wiki);
+            var meetingsChain = mdom.root.children[0];
+            // Both meetings reached the meetings chain via the source-iterator
+            // input pattern; if `[get[rrt.type]…]` resolved against the outer
+            // widget's currentTiddler the chain would be empty.
+            expect(meetingsChain.children.length).toBe(2);
+        });
+
+        it("regression: leading the filter with <currentTiddler> rejects ALL leaves (anti-pattern)", function () {
+            // Re-wire the meetings chain to lead with <currentTiddler>, simulating
+            // the bug that bit orga-apps 0.2.67's Topics chain. Because TW
+            // resolves <currentTiddler> from the widget — NOT the source —
+            // and there is no meaningful widget currentTiddler in the test
+            // environment, the run produces empty and every leaf is rejected.
+            var fix = setupMixedFixtures();
+            fix.forEach(function (t) {
+                if (t.title === "Chain/meetings-only") {
+                    t["mm.leaf-filter"] = "[<currentTiddler>get[rrt.type]match[meeting]]";
+                }
+            });
+            var wiki = setupWiki(fix);
+            var mdom = producer.produce({ template: "Template/mixed", "canvas-id": "c1" }, wiki);
+            var meetingsChain = mdom.root.children[0];
+            // The chain renders (it didn't opt into mm.chain-hide-when-empty)
+            // but its leaf set is empty because every probe returned 0 items.
+            expect(meetingsChain.attrs["gt:chain-id"]).toBe("meetings");
+            expect(meetingsChain.children.length).toBe(0);
+        });
     });
 
     describe("produce — chain-level leaf-sort", function () {
