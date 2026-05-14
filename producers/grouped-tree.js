@@ -146,7 +146,12 @@ function readChain(wiki, chainTitle, seen) {
         // sub-chains (parent chain — recurses, each sub-chain gets the
         // parent's filtered leaf set). When both are set, sub-chains win.
         axes: axes,
-        subChains: subChains
+        subChains: subChains,
+        // "yes" → omit this chain entirely from the rendered tree when its
+        // filtered leaf set is empty (and no sub-chain has any leaves). Lets
+        // a template ship a chain that only makes sense for some entity
+        // types without painting an empty "(0)" branch on the others.
+        hideWhenEmpty: trim(f["mm.chain-hide-when-empty"]) === "yes"
     };
 }
 
@@ -379,9 +384,10 @@ function buildChainNode(chain, leaves, disabled, wiki, widget, buildOpts) {
         // Parent chain: render each sub-chain as a synthetic child node.
         // The parent's filtered leaf set cascades into every sub-chain.
         for (var s = 0; s < chain.subChains.length; s++) {
-            children.push(buildChainNode(
+            var subNode = buildChainNode(
                 chain.subChains[s], chainLeaves, disabled, wiki, widget, buildOpts
-            ));
+            );
+            if (subNode) { children.push(subNode); }
         }
     } else {
         // Leaf chain: run the axis pipeline.
@@ -397,6 +403,12 @@ function buildChainNode(chain, leaves, disabled, wiki, widget, buildOpts) {
         }
     }
     var leafCount = chainLeaves.length;
+    // hide-when-empty opt-in: drop the chain entirely when it would render
+    // with zero leaves AND zero child-chain-nodes. Returns null; callers
+    // must skip null entries when collecting children.
+    if (chain.hideWhenEmpty && leafCount === 0 && children.length === 0) {
+        return null;
+    }
     var attrs = {
         "core:synthetic": true,
         "gt:chain-id": chain.id,
@@ -457,9 +469,10 @@ function buildRoot(template, leaves, disabled, wiki, widget) {
     };
     var chainNodes = [];
     for (var i = 0; i < template.chains.length; i++) {
-        chainNodes.push(buildChainNode(template.chains[i], leaves, disabled, wiki, widget, buildOpts));
+        var node = buildChainNode(template.chains[i], leaves, disabled, wiki, widget, buildOpts);
+        if (node) { chainNodes.push(node); }
     }
-    if (template.chains.length === 1) {
+    if (template.chains.length === 1 && chainNodes.length === 1) {
         // Single-chain collapse: the chain root IS the producer root. Use the
         // template caption as the label; leaf-count is already on attrs.
         var only = chainNodes[0];

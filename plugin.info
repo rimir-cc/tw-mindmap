@@ -3,7 +3,7 @@
     "description": "Engine-agnostic mindmap rendering for TiddlyWiki with a base + overlay data model",
     "name": "mindmap",
     "author": "rimir",
-    "version": "0.2.14",
+    "version": "0.2.15",
     "core-version": ">=5.3.0",
     "plugin-type": "plugin",
     "dependents": [],

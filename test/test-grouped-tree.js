@@ -659,6 +659,76 @@ describe("mindmap-grouped-tree", function () {
         });
     });
 
+    describe("produce — chain-hide-when-empty", function () {
+        function hideFixtures(opts) {
+            opts = opts || {};
+            var topicsChain = { title: "Chain/topics",
+                  "mm.chain-id": "topics",
+                  "mm.chain-caption": "Topics",
+                  "mm.leaf-filter": "[get[rrt.type]match[shared-topic]]",
+                  "mm.axes": "[[Axis/by-status]]" };
+            if (opts.hide) { topicsChain["mm.chain-hide-when-empty"] = "yes"; }
+            return [
+                { title: "Axis/by-status",
+                  "mm.axis-id": "by-status",
+                  "mm.axis-field": "status" },
+                { title: "Chain/meetings-only",
+                  "mm.chain-id": "meetings",
+                  "mm.chain-caption": "Meetings",
+                  "mm.leaf-filter": "[get[rrt.type]match[meeting]]",
+                  "mm.axes": "[[Axis/by-status]]" },
+                topicsChain,
+                { title: "Template/mixed",
+                  "mm.template-caption": "Mixed",
+                  "mm.leaf-filter": "[tag[mixed]]",
+                  "mm.chains": "[[Chain/meetings-only]] [[Chain/topics]]" },
+                { title: "m1", tags: "mixed", "rrt.type": "meeting", status: "open" }
+                // no shared-topic — topics chain will be empty
+            ];
+        }
+
+        it("opt-out (default): empty chain renders with zero leaves", function () {
+            var wiki = setupWiki(hideFixtures({ hide: false }));
+            var mdom = producer.produce({ template: "Template/mixed", "canvas-id": "c1" }, wiki);
+            // Both chains present; topics chain empty
+            expect(mdom.root.children.length).toBe(2);
+            var topicsChain = mdom.root.children[1];
+            expect(topicsChain.attrs["gt:chain-id"]).toBe("topics");
+            expect(topicsChain.children.length).toBe(0);
+        });
+
+        it("opt-in: empty chain omitted from rendered tree", function () {
+            var wiki = setupWiki(hideFixtures({ hide: true }));
+            var mdom = producer.produce({ template: "Template/mixed", "canvas-id": "c1" }, wiki);
+            // Only meetings chain renders; topics omitted entirely
+            expect(mdom.root.children.length).toBe(1);
+            expect(mdom.root.children[0].attrs["gt:chain-id"]).toBe("meetings");
+        });
+
+        it("opt-in: non-empty chain still renders", function () {
+            var fix = hideFixtures({ hide: true });
+            fix.push({ title: "topic1", tags: "mixed", "rrt.type": "shared-topic", status: "open" });
+            var wiki = setupWiki(fix);
+            var mdom = producer.produce({ template: "Template/mixed", "canvas-id": "c1" }, wiki);
+            expect(mdom.root.children.length).toBe(2);
+            expect(mdom.root.children[1].attrs["gt:chain-id"]).toBe("topics");
+        });
+
+        it("opt-in: when all chains are empty, single-chain collapse does not crash", function () {
+            // Template has two chains; one opts in to hide-when-empty, the
+            // other is the only one with leaves — final children count should
+            // still drop to one without breaking the multi-chain root.
+            var fix = hideFixtures({ hide: true });
+            // remove the meeting → both chains would be empty
+            fix = fix.filter(function (t) { return t.title !== "m1"; });
+            var wiki = setupWiki(fix);
+            var mdom = producer.produce({ template: "Template/mixed", "canvas-id": "c1" }, wiki);
+            // meetings chain still renders (opted out), topics omitted
+            expect(mdom.root.children.length).toBe(1);
+            expect(mdom.root.children[0].attrs["gt:chain-id"]).toBe("meetings");
+        });
+    });
+
     describe("produce — leaf counts on synthetic nodes", function () {
         it("emits gt:leaf-count attribute on chain root and group nodes when mm.show-counts is yes", function () {
             var fix = meetingFixtures();
