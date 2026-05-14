@@ -22,6 +22,11 @@ var Widget = require("$:/core/modules/widgets/widget.js").widget;
 var composer = require("$:/plugins/rimir/mindmap/compose.js");
 var overlayStore = require("$:/plugins/rimir/mindmap/overlay-store.js");
 var router = require("$:/plugins/rimir/mindmap/structural-ops.js");
+var flagDecorate = require("$:/plugins/rimir/mindmap/lib/flag-decorate.js");
+
+// Tag for flag-rule tiddlers. Watched in refresh() so editing a rule re-runs
+// the decoration pass without needing a structural change to anything else.
+var FLAG_RULE_TAG = "$:/tags/rimir/mindmap/flag";
 
 var ENGINE_CONFIG_TIDDLER = "$:/config/rimir/mindmap/default-engine";
 var CASCADE_THRESHOLD_TIDDLER = "$:/config/rimir/mindmap/structural/cascade-threshold";
@@ -176,6 +181,10 @@ MindmapWidget.prototype.execute = function () {
     // mind-elixir, equivalent in other engines). Widget attr wins; view-
     // tiddler `mm.allow-node-creation` is the fallback. Default "yes".
     this.allowNodeCreationAttr = trim(this.getAttribute("allow-node-creation", ""));
+    // Flag-rule selection. Widget `flags=` attr overrides the view's
+    // `mm.flags` field. Either is a TW filter resolving to flag-rule tiddler
+    // titles (tagged $:/tags/rimir/mindmap/flag). Empty → no flags applied.
+    this.flagsAttr = trim(this.getAttribute("flags", ""));
 
     this.errorMessage = null;
     this.producerName = null;
@@ -269,6 +278,27 @@ MindmapWidget.prototype.execute = function () {
         this.errorMessage = "View tiddler missing mm.producer field.";
         return;
     }
+
+    // Flag rules resolution. Widget attr beats view field — same precedence
+    // as engine/overlay. Rules are loaded once per execute() (i.e. per
+    // refreshSelf) and on every reproduce() via reloadFlagRules() so edits
+    // to the rule tiddlers reflect without a full teardown.
+    this.flagsFilter = this.flagsAttr;
+    if (!this.flagsFilter && this.viewAttr) {
+        var viewForFlags = this.wiki.getTiddler(this.viewAttr);
+        if (viewForFlags) {
+            this.flagsFilter = trim(viewForFlags.fields["mm.flags"] || "");
+        }
+    }
+    this.reloadFlagRules();
+};
+
+MindmapWidget.prototype.reloadFlagRules = function () {
+    this.flagRules = flagDecorate.loadFlagRules(this.wiki, {
+        rulesFilter: this.flagsFilter,
+        viewTitle: this.viewAttr,
+        mmProducer: this.producerName
+    });
 };
 
 // Pure: decide allow-node-creation from (attr value, view-field value).
@@ -464,6 +494,16 @@ MindmapWidget.prototype.produceBase = function () {
     var mdom = producer.produce(effectiveArgs, this.wiki, this);
     if (!mdom || !mdom.root) {
         throw new Error("Producer " + this.producerName + " returned invalid MDOM");
+    }
+    // Filter-driven flag decoration. Runs BEFORE compose so live overlay
+    // setAttr ops can still override flag-stamped attrs. No-ops cleanly when
+    // no rules are configured for this view.
+    if (this.flagRules && this.flagRules.length > 0) {
+        try {
+            flagDecorate.decorateFlags(mdom, this.flagRules, this.wiki);
+        } catch (e) {
+            console.error("[$mindmap] flag decoration failed", e);
+        }
     }
     var refreshFilter = null;
     if (typeof producer.refreshFilter === "function") {
@@ -1285,7 +1325,7 @@ MindmapWidget.prototype.refreshPresentationUI = function (changedTiddlers) {
 
 MindmapWidget.prototype.refresh = function (changedTiddlers) {
     var changedAttrs = this.computeAttributes();
-    var rebuilders = ["view", "filter", "engine", "overlay", "class", "style", "height", "readonly"];
+    var rebuilders = ["view", "filter", "engine", "overlay", "flags", "class", "style", "height", "readonly"];
     for (var i = 0; i < rebuilders.length; i++) {
         if (changedAttrs[rebuilders[i]]) {
             this.refreshSelf();
@@ -1421,6 +1461,36 @@ MindmapWidget.prototype.refresh = function (changedTiddlers) {
         this.updateSavedStateButtons();
         this.forwardPreviewRefresh(changedTiddlers);
         return true;
+    }
+    // Flag-rule tiddler edits: reload rules and re-decorate. Cheap reproduce
+    // because decoration is the only thing that depends on rule contents;
+    // base MDOM is unchanged. Detect by inspecting tags on each changed
+    // tiddler (and on the wiki's current tagged set, to catch deletions).
+    if (this.flagsFilter) {
+        var flagsChanged = false;
+        for (var ct in changedTiddlers) {
+            var ctt = this.wiki.getTiddler(ct);
+            if (ctt && ctt.fields) {
+                var tags = $tw.utils.parseStringArray(ctt.fields.tags || "");
+                if (tags.indexOf(FLAG_RULE_TAG) >= 0) { flagsChanged = true; break; }
+            }
+            // Tiddler may have been deleted — check if its title was in the
+            // last-resolved rule set.
+            if (this.flagRules) {
+                for (var fri = 0; fri < this.flagRules.length; fri++) {
+                    if (this.flagRules[fri].sourceTitle === ct) { flagsChanged = true; break; }
+                }
+                if (flagsChanged) { break; }
+            }
+        }
+        if (flagsChanged) {
+            this.reloadFlagRules();
+            try { this.reproduce(); } catch (e) {
+                console.error("[$mindmap] flag-rule re-produce failed", e);
+            }
+            this.forwardPreviewRefresh(changedTiddlers);
+            return true;
+        }
     }
     // Saved-default tiddler edited externally (or by our save action). Re-
     // compose so the default layer reflects the new ops.
@@ -2078,3 +2148,8 @@ exports.mindmap = MindmapWidget;
 exports._isPreviewPaneVisible = isPreviewPaneVisible;
 exports._resolveAllowNodeCreation = resolveAllowNodeCreation;
 exports._mergeSavedAndOverlay = mergeSavedAndOverlay;
+// Re-export the flag-decoration helpers so tests can pin both the loader and
+// the decorator from a single import surface alongside the rest of the
+// widget's pure functions.
+exports._loadFlagRules = flagDecorate.loadFlagRules;
+exports._decorateFlags = flagDecorate.decorateFlags;

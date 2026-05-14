@@ -196,3 +196,9 @@ Overlay tiddler writes are debounced at 250 ms to avoid spamming filesystem-watc
 !! Restricted-wiki environments
 
 If `llm-connect` or another plugin restricts which tiddlers may be written, overlay tiddler titles MUST be in the protection allow filter or writes will be silently dropped. The widget reflects this with no error — drag changes appear to work in the UI but do not persist after reload.
+
+!! Flag rules
+
+''Flag rules'' are plain tiddlers tagged `$:/tags/rimir/mindmap/flag` that attach filter-driven visual signals (icons, colour, border, font-weight, …) to mindmap nodes. There is no global config — discovery is per-view via the `mm.flags` field (or per-widget via `flags=`). See the ''Flags'' tab for the schema and recipes.
+
+Authoring is intentionally schema-only: a rule is data, edited like any other tiddler. The widget watches `[tag[$:/tags/rimir/mindmap/flag]]`, so edits take effect on the next refresh.

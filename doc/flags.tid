@@ -1,0 +1,162 @@
+created: 20260514000000000
+modified: 20260514000000000
+rdt.order: 5
+rdt.plugin-key: mindmap
+rdt.plugin-name: mindmap
+rdt.plugin-subtitle: Engine-agnostic mindmap rendering with base + overlay data model
+rdt.section: Flags
+title: $:/plugins/rimir/mindmap/doc/flags
+type: text/vnd.tiddlywiki
+
+<$transclude $tiddler="$:/plugins/rimir/doc-template/templates/page">
+<$fill $name="body">
+
+!! What flag rules do
+
+A ''flag rule'' is a tiddler tagged `$:/tags/rimir/mindmap/flag` that attaches a visual signal to every mindmap node matching a filter. Authoring a rule looks like this:
+
+```
+title: $:/my-flags/critical
+tags: $:/tags/rimir/mindmap/flag
+mm.flag-name: critical
+mm.flag-filter: [priority[critical]]
+mm.flag-icon: 🔥
+mm.flag-font-weight: bold
+mm.flag-aggregate: any
+```
+
+Whenever this rule is loaded by a mindmap view, every tiddler-backed leaf whose `priority` field is `critical` shows the 🔥 icon and a bold label. Synthetic chain/axis nodes whose subtree contains ≥1 critical leaf inherit the icon too (aggregation: `any`).
+
+''Why not stamp icons directly on tiddlers?'' Two reasons:
+
+* The same tiddler can fan out into many views (Tasks chain, Notes chain, …). One filter-driven rule is more correct than N hand-stamps.
+* Conditions like //"overdue //and// not yet completed"// derive from multiple fields. Filter rules let the visual signal track field changes automatically.
+
+!! Opting a view in
+
+Per-view:
+
+```
+mm.flags: [tag[$:/tags/rimir/mindmap/flag]tag[orga-apps]]
+```
+
+Or per-widget (overrides the field):
+
+```
+<$mindmap view="..." flags="[tag[$:/tags/rimir/mindmap/flag]tag[orga-apps]]"/>
+```
+
+The empty default — no `mm.flags`, no `flags=` — is intentional: third-party plugins can ship rule tiddlers without affecting unrelated views.
+
+!! Field reference
+
+See //Reference > Flag decoration// for the full schema. The most common subset:
+
+* `mm.flag-name` (required) — slug used in `data-mm-flags` and per-flag boolean attr.
+* `mm.flag-filter` (required) — //predicate filter// applied to the candidate leaf set. Use `[priority[critical]]`, not `[is[current]priority[critical]]`.
+* `mm.flag-icon` — single glyph; stacks with other matching rules' icons.
+* `mm.flag-text-color`, `mm.flag-bg-color`, `mm.flag-border-color`/`width`/`style`, `mm.flag-font-weight`, `mm.flag-font-style`, `mm.flag-text-transform`, `mm.flag-opacity`, `mm.flag-font-size-scale` — typography & decoration.
+* `mm.flag-aggregate` — `any` / `all` / empty (leaf-only).
+* `mm.flag-priority` — integer; higher applied later (last-wins for style conflicts), icon appears further left.
+* `mm.flag-scope` — TW filter restricting which views/producers the rule applies to. `<<mm-producer>>` and `<<currentTiddler>>` (= view title) are visible.
+* `mm.flag-tooltip` — text shown in the native browser tooltip when the user hovers the topic. Multiple matching rules stack their tooltips (one line each).
+
+!! Recipes
+
+!!! Bold + red border for high priority
+
+```
+mm.flag-name: critical
+mm.flag-filter: [priority[critical]] [priority[high]]
+mm.flag-font-weight: bold
+mm.flag-border-color: #d04444
+mm.flag-border-width: 2px
+mm.flag-border-style: solid
+mm.flag-priority: 30
+```
+
+!!! Dimmed italic for archived items
+
+```
+mm.flag-name: archived
+mm.flag-filter: [status[archived]]
+mm.flag-opacity: 0.5
+mm.flag-font-style: italic
+mm.flag-priority: 5
+```
+
+!!! Aggregate parent badge: any descendant is overdue
+
+```
+mm.flag-name: overdue
+mm.flag-filter: [!status[completed]oa-task-urgency[]match[Past]]
+mm.flag-icon: ⏰
+mm.flag-text-transform: uppercase
+mm.flag-aggregate: any
+```
+
+The chain root that owns an overdue leaf now also shows ⏰ — useful as a tab badge.
+
+!!! Scope a rule to one producer
+
+```
+mm.flag-scope: [<mm-producer>match[grouped-tree]]
+```
+
+The rule is loaded only when the view's producer is `grouped-tree`. Other views (knowledge-tree, json, filter-tree, …) see it as if it didn't exist.
+
+!!! Multi-icon stack with priority ordering
+
+Two rules matching the same task — `critical` (priority 30, icon 🔥) and `overdue` (priority 20, icon ⏰). The leaf renders 🔥 ⏰ — descending priority, so the most-important icon is leftmost. Style conflicts resolve last-wins (priority 30 overrides priority 20).
+
+!!! Hover tooltips
+
+Add `mm.flag-tooltip` to give the user a human-readable explanation when they hover the topic:
+
+```
+mm.flag-tooltip: ⏰ Overdue — past due-date, still open
+```
+
+If multiple rules match a node, each rule's tooltip becomes one line of the topic's native `title=` attribute (browser tooltip), ordered by ascending priority. If the producer also emits a `core:tooltip` (e.g. knowledge-tree's structural breadcrumb), that line comes first and the flag block follows below.
+
+!! CSS hooks
+
+For effects the schema doesn't cover directly, target the DOM attrs the mind-elixir adapter stamps:
+
+```
+me-tpc[data-mm-flags~="urgent"]::before {
+    content: "!";
+    color: #d04444;
+    margin-right: 4px;
+    font-weight: bold;
+}
+
+/* Tone aggregation down on synthetic ancestors */
+me-tpc[data-mm-flags~="overdue"][data-mm-synthetic="yes"] {
+    text-transform: none;
+    outline: none;
+}
+```
+
+`mm.flag-class` adds custom class tokens to `data-mm-flag-classes`:
+
+```
+mm.flag-class: kn-priority-bump
+```
+
+→ DOM: `<me-tpc data-mm-flag-classes="kn-priority-bump">`. Author the CSS in your own theme tiddler.
+
+!! Gotchas
+
+* ''Plugin-shipped rules are SHADOWS — the `mm.flags` filter must traverse shadows.'' Tiddlers shipped inside a plugin (e.g. `$:/plugins/foo/flags/bar`) are shadow tiddlers, and TW's bare `[tag[X]]` operator only sees //regular// tiddlers. Always start a discovery filter with `[all[tiddlers+shadows]tag[...]]` — otherwise you'll silently load zero rules. Example:
+:`mm.flags: [all[tiddlers+shadows]tag[$:/tags/rimir/mindmap/flag]tag[orga-apps]]`
+* ''Predicate filter form.'' The decorator passes candidate leaf titles as the filter's source iterator. Use plain field operators (`[priority[critical]]`); `[is[current]…]` won't match because `currentTiddler` isn't bound during the inverted-loop call.
+* ''Preserve titles when the filter ends with a value-returning operator.'' Operators like `oa-task-urgency[]`, `get[…]`, `addsuffix[…]` //replace// each input title with a derived string, so the filter output becomes a list of strings — not the task titles the decorator needs. Use `:filter[…]` to keep titles while testing a predicate:
+:`[rrt.type[task]!status[completed]] :filter[oa-task-urgency[]match[Past]]`
+:The `:filter[X]` accumulator keeps each item where running X with that item as the source returns non-empty — and preserves the original title in the output.
+* ''Outline, not border.'' Mind-elixir uses `border` on the topic bubble for its focus ring. The decorator's `mm.flag-border-*` composite is rendered to `style.outline` so the focus ring stays intact.
+* ''Aggregation only stamps synthetic nodes.'' A tiddler-backed parent (knowledge-tree parent note) never inherits a child's flag — intentional, to avoid surprise styling on real tiddlers.
+* ''Edits trigger refresh on every keystroke.'' The widget watches `[tag[$:/tags/rimir/mindmap/flag]]`. Editing a rule's body field causes a re-decorate per keystroke. Cheap in practice; deferred batched-refresh is a v1.x consideration if a wiki accumulates many rules.
+
+</$fill>
+</$transclude>

@@ -1,0 +1,45 @@
+title: $:/plugins/rimir/mindmap/flags
+type: text/vnd.tiddlywiki
+
+! Flag rules — filter-driven visual signals
+
+''Flag rules'' attach icons, colour, border, font-weight, and other visual signals to mindmap nodes based on a TW filter. Authors write rules as plain tiddlers tagged `$:/tags/rimir/mindmap/flag`; the widget runs each rule's filter once per render and stamps matching leaves (plus, optionally, their synthetic ancestors).
+
+!! Quickstart
+
+Create a rule tiddler:
+
+```
+title:           $:/my-flags/critical
+tags:            $:/tags/rimir/mindmap/flag
+mm.flag-name:    critical
+mm.flag-filter:  [priority[critical]]
+mm.flag-icon:    🔥
+mm.flag-font-weight: bold
+mm.flag-aggregate:   any
+mm.flag-priority:    30
+```
+
+Opt the view in:
+
+```
+mm.flags: [tag[$:/tags/rimir/mindmap/flag]]
+```
+
+Or per-widget:
+
+```
+<$mindmap view="..." flags="[tag[$:/tags/rimir/mindmap/flag]]"/>
+```
+
+The default (empty `mm.flags`, no `flags=`) applies //no// flags — opt-in only.
+
+!! Full schema, recipes, gotchas
+
+See the ''Flags'' tab in the plugin's Documentation hub (rendered via the doc-template plugin) or the //Reference// tab's ''Flag decoration'' section.
+
+!! Listing rules in the current wiki
+
+<$list filter="[tag[$:/tags/rimir/mindmap/flag]]" emptyMessage="(no flag rules in this wiki)">
+* <$link to=<<currentTiddler>>><<currentTiddler>></$link> — name: <$transclude $tiddler=<<currentTiddler>> $field="mm.flag-name"/>, filter: `<$transclude $tiddler=<<currentTiddler>> $field="mm.flag-filter"/>`
+</$list>

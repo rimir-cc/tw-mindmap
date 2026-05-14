@@ -130,6 +130,40 @@ The template branches on `<<previewKind>>` first to render kind-specific UI — 
 
 Only `kind === "chain"` selections currently open the pane. Axis-kind descriptors are still recorded for host templates that want to opt in.
 
+!! Flag decoration pass
+
+A fourth, optional pipeline stage sits between produce and compose: a ''flag decorator'' that walks the MDOM and stamps filter-driven visual attrs on tiddler-backed nodes.
+
+''Why a separate pass?'' Producers project structure; engines render. Flags belong to neither — they're declarative visual rules a wiki author authors as plain tiddlers (`$:/tags/rimir/mindmap/flag`) without touching producer or engine code. By running between produce and compose, the decoration is producer-agnostic (any node carrying `core:tiddler` participates) and still overridable by overlay ops (a live `setAttr` lands after decoration and wins last-write).
+
+''Pipeline insertion:''
+
+```
+produceBase()  →  decorateFlags(mdom, rules, wiki)  →  composer.compose(mdom, ops)
+   producer            (new — flag-decorate.js)             compose.js
+```
+
+''Algorithm — leaf level:'' Collect every node carrying a non-empty `core:tiddler` into a title-keyed index. For each rule R, run `R.filter` ONCE with the index titles as the filter's source iterator. The result is the set of leaf titles that match R. Per-leaf decoration walks the index and stamps the union of every matching rule's contributions into the node's `attrs`. Net cost: M filter calls (one per rule), not N×M.
+
+''Algorithm — aggregation:'' If any rule sets `mm.flag-aggregate`, a second bottom-up MDOM walk computes per-subtree (leaf-descendant count, matched-leaf count per aggregating rule), memoised once per node. Synthetic ancestors (`core:synthetic === true`) get stamped when the rule's policy (`any` / `all`) is satisfied. Non-synthetic ancestors are intentionally left untouched — a knowledge-tree parent doesn't pick up its child's flag without explicit author intent.
+
+''Output attrs (engine-neutral):''
+
+|!Attr |!Meaning |
+|`mx:flags` |Space-separated names of matching rules (ascending priority order). Mind-elixir adapter mirrors to `data-mm-flags` on `<me-tpc>` |
+|`mx:flag-<name>` |Boolean `true` per matching rule (finer CSS hooks) |
+|`mx:flag-classes` |Space-separated `mm.flag-class` tokens (mirrored to `data-mm-flag-classes`) |
+|`mx:icons` |Pipe-separated icon glyphs in DESCENDING priority order (highest-priority icon leftmost in the topic) |
+|`mx:text-color`, `mx:font-weight`, `mx:font-style`, `mx:text-transform`, `mx:opacity`, `mx:font-size-scale` |First-class typography channels the adapter writes to inline `style.*` |
+|`mx:border` |Composite `"<width> <style> <color>"`. Mind-elixir writes to `style.outline` (NOT `border`) to avoid clobbering the engine's focus ring |
+|`core:color` |Background colour driven by `mm.flag-bg-color`. Reuses the existing channel so the adapter's auto-contrast foreground logic just works |
+
+''Why `mx:*` instead of `core:*` for typography?'' These attrs are visual hints meaningful to engines that render text labels. A future graph-engine (e.g. a vis-network mindmap adapter) may not honour `font-weight`. Keeping them under `mx:` reflects "engine-specific intent" — a graph adapter can ignore them without surprise. Engine portability is at the //data layer//: a different mindmap engine adapter reads the same `mx:*` attrs and translates to its rendering model (cytoscape `data()` / `classes`, etc.).
+
+''Refresh model:'' The widget watches `[tag[$:/tags/rimir/mindmap/flag]]`. Editing any rule tiddler triggers a `reloadFlagRules` + `reproduce` cycle. Deletion is also handled — the previous rule set's source titles are checked against the changed-tiddler set. No per-render caching in v1; the cost (M filter calls) is bounded and bounded sub-10ms in practice.
+
+''Decorator → adapter contract:'' The decorator commits to the `mx:*` and `data-mm-*` shapes above. Engine adapters that want to participate read those keys and translate to engine-native style/data. The mindmap-elixir adapter does this in two places — `toMENode()` for the `style.*` channels and `_applyTooltips()` for the `data-mm-*` DOM attrs.
+
 !! Allow-node-creation policy
 
 Widget attr `allow-node-creation` (default `yes`) — with view field `mm.allow-node-creation` as fallback — controls whether the engine adapter responds to native node-creation gestures (Tab → child, Enter → sibling, context-menu "Add Child"/"Add Sibling"). When `no`, the widget calls `engine.setAllowNodeCreation(false)`; engine-agnostic — adapters that implement the hook block at the keydown capture-phase AND veto in-memory placeholder operations, restoring the canvas from cached MDOM. Used by views over //synthetic-structure producers// (grouped-tree, future tag-tree etc.) where a new node has no tiddler-of-origin to inherit from.

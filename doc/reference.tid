@@ -25,6 +25,7 @@ type: text/vnd.tiddlywiki
 |`state` |— |State-tiddler prefix for engine-internal UI state (reserved) |
 |`onSelectActions` |— |Action string invoked on node selection; receives `<<nodeId>>` |
 |`allow-node-creation` |`yes` |`no` to suppress the engine's native node-creation gestures (Tab → child, Enter → sibling, context-menu "Add Child"/"Add Sibling"). Useful for read-only / synthetic-structure views (e.g. `grouped-tree`) where new nodes have no tiddler-of-origin. View-tiddler `mm.allow-node-creation` is the fallback |
+|`flags` |— |TW filter resolving to flag-rule tiddler titles (tagged `$:/tags/rimir/mindmap/flag`). Overrides the view-tiddler `mm.flags` field. Empty → no flags applied. See ''Flag decoration'' section below |
 
 Setting both `view` and `filter` is a configuration error and renders an error banner.
 
@@ -45,6 +46,62 @@ Setting both `view` and `filter` is a configuration error and renders an error b
 |`mm.allow-node-creation` |no |`yes` / `no`. Overridden by widget attr `allow-node-creation` when set. When `no`, the engine swallows native node-creation gestures (Tab/Enter and context-menu "Add Child"). Engine-agnostic — engines implement `setAllowNodeCreation(bool)` |
 |`mm.root-label` |no |Override the producer's natural root label. ''Literal mode'': any non-empty string //not// starting with `[`. ''Filter mode'': starts with `[`. Evaluated in the widget's variable scope (parent `<$let>` variables are visible — write `[<entity>get[caption]] ~[<entity>]` to use the surrounding entity's caption). First filter result wins; empty falls back to the producer's default |
 |`mm.preview-body-template` |no |Title of a wikitext tiddler rendered in the right pane's Body mode in place of the default text-view. Receives variables `<<previewTitle>>` (leaf selection's backing title), `<<previewKind>>` (synthetic-node chainId — empty for leaves), `<<previewKindAxisKey>>`, `<<previewKindKeyPath>>`. Branch on `previewKind` first to render kind-specific UI for chain/axis selections |
+|`mm.flags` |no |TW filter resolving to flag-rule tiddler titles applied to this view. Overridden by the widget `flags=` attr when present. See ''Flag decoration'' section below |
+
+!! Flag decoration
+
+Flag rules apply filter-driven visual signals to nodes — icons, colour, border, font-weight, etc. — without producer changes. A rule is a plain tiddler tagged `$:/tags/rimir/mindmap/flag`; the widget runs each rule's filter once per render against the candidate leaf-titles (one wiki call per rule — //M filter calls//, not N×M) and stamps the matching nodes with MDOM attrs the engine adapter renders.
+
+!!! Rule schema
+
+|!Field |!Required |!Purpose |
+|`mm.flag-name` |yes |Short slug `[a-z0-9-]`. Stamped as `data-mm-flags="<name>"` on the DOM (token-list — multiple flags coexist) and as the per-flag boolean attr `mx:flag-<name>` for finer CSS hooks |
+|`mm.flag-filter` |yes |//Predicate filter// applied to the candidate leaf set. Use field operators directly (`[priority[critical]]`). //Do not// use `[is[current]…]` — the decorator passes the candidate titles as the filter's source, so `is[current]` doesn't fire. When chaining operators that //replace// the title with a derived value (e.g. `get[field]`, `oa-task-urgency[]`, `addsuffix[…]`), wrap the predicate in `:filter[…]` to preserve titles: `[rrt.type[task]] :filter[oa-task-urgency[]match[Past]]` |
+|`mm.flag-aggregate` |no |`any` → stamp the rule on synthetic ancestors (`core:synthetic === true`) that have ≥1 matching leaf descendant. `all` → only when 100% of leaf descendants match. Empty → leaf-only (no aggregation). Non-synthetic ancestors are NEVER stamped by aggregation |
+|`mm.flag-scope` |no |TW filter that gates rule eligibility. Evaluated once at load time with `<currentTiddler>` = the view tiddler title and `<<mm-producer>>` = the active producer name. Empty result → rule skipped. Example: `[<mm-producer>match[grouped-tree]]` restricts a rule to grouped-tree views |
+|`mm.flag-priority` |no |Integer (default `0`). Higher priority applied LATER for style conflicts (last-wins) and appears EARLIER (leftmost) in the icon stack. Ties broken by source-tiddler title |
+|`mm.flag-icon` |no |Single emoji / unicode glyph. Merged into the engine's icon array |
+|`mm.flag-text-color` |no |CSS colour → `style.color` |
+|`mm.flag-bg-color` |no |CSS colour. Writes `core:color` (reuses the existing background channel with auto-contrast foreground) |
+|`mm.flag-border-color`, `mm.flag-border-width`, `mm.flag-border-style` |no |Component pieces composed into `mx:border` (`"2px solid #d04444"`). Mind-elixir adapter writes it to `style.outline` (NOT `border`) so the engine's focus ring still renders |
+|`mm.flag-font-weight` |no |`bold`, `600`, etc. → `style.fontWeight` |
+|`mm.flag-font-style` |no |`italic` → `style.fontStyle` |
+|`mm.flag-text-transform` |no |`uppercase` / `lowercase` / `capitalize` → `style.textTransform` |
+|`mm.flag-opacity` |no |`0.0`–`1.0`. Out-of-range values clamped with a console warning |
+|`mm.flag-font-size-scale` |no |Multiplier like `1.15`. Adapter writes `style.fontSize = "<value>em"` |
+|`mm.flag-class` |no |Extra class tokens appended to `data-mm-flag-classes`. CSS escape hatch when the schema doesn't cover a desired effect |
+|`mm.flag-tooltip` |no |Text rendered in the topic's native `title=` tooltip. When multiple rules match a node, their tooltips stack on separate lines (ascending priority order). Combined with the producer's `core:tooltip` if both are set — `core:tooltip` first, then the flag block |
+
+!!! Aggregation semantics
+
+When a rule sets `mm.flag-aggregate`, the decorator walks the MDOM bottom-up after leaf decoration. Each synthetic ancestor's leaf-descendant count and matched-descendant count are memoised in one pass. Aggregation cascades naturally through nested synthetic levels (axis inside chain inside root). Recursion is capped at depth 64 with a console warning if exceeded — protects against malformed input.
+
+A tiddler-backed parent (knowledge-tree's pattern of a note containing notes) is //not// considered synthetic and never picks up aggregated flags from its children. CSS can target the difference via `me-tpc[data-mm-synthetic="yes"]`.
+
+!!! Stacking & conflict resolution
+
+Rules sort ascending by `mm.flag-priority` (ties by source title). The decorator iterates ascending and:
+
+* ''Names'' accumulate in ascending order: `mx:flags="r1 r2 r3"` (lowest priority first).
+* ''Style attrs'' overwrite in ascending order: highest priority wins for the same property.
+* ''Icons'' sort DESCENDING by priority before joining: `mx:icons="<highest>|<lower>|<lowest>"` (leftmost icon = most important).
+* ''Classes'' concatenate (de-duplicated).
+
+!!! DOM contract (mind-elixir adapter)
+
+The adapter stamps three companion `data-*` attrs on `<me-tpc>` so CSS authors can style without engine-specific knowledge:
+
+* `data-mm-flags="critical overdue"` — token list. Match individual flags with `me-tpc[data-mm-flags~="overdue"]`.
+* `data-mm-flag-classes="kn-starred fade"` — custom class tokens from `mm.flag-class`.
+* `data-mm-synthetic="yes"` — present on synthetic chain/axis nodes (regardless of flag state).
+
+Plus the inline `style.*` properties driven by the `mx:*` attrs above. The first-class style channel means typography flags ("bold", "uppercase") work without writing any CSS.
+
+!!! Performance
+
+Inverted-loop evaluation: M wiki filter calls per render (one per rule against the full candidate-title universe), then a single MDOM walk for decoration and one bottom-up walk for aggregation. For typical views (N ≤ 200 leaves, M ≤ 10 rules) this is sub-10ms.
+
+The widget watches `[tag[$:/tags/rimir/mindmap/flag]]` — editing any rule tiddler re-runs the decoration pass without rebuilding the engine.
 
 !! Grouped-tree producer args
 

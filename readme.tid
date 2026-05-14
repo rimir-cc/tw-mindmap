@@ -13,6 +13,7 @@ Engine-agnostic mindmap rendering for TiddlyWiki. Provides a canonical mindmap d
 * ''Structural editing (write-back)'' — producers that declare `capabilities.structural` translate drag-rename / drag-reparent / addNode / removeNode into real wiki mutations (`renameTiddler` cascades references via flibbles/relink; `addTiddler`/`deleteTiddler` for create/destroy). Cascade-confirm modal guards large operations. Focus mode drills into subtrees.
 * ''Stable IDs with rename rescue'' — producers assign deterministic IDs; orphaned overlay ops survive upstream renames and surface a manual prune action rather than silently disappearing.
 * ''Forward-compatible with slide mode'' — the overlay op vocabulary doubles as the slide-ops vocabulary for the planned presentation player.
+* ''Filter-driven flag decoration'' — author plain tiddlers tagged `$:/tags/rimir/mindmap/flag` to attach icons, colour, border, font-weight, italic, uppercasing, opacity, etc. to nodes that match a filter. Aggregation rolls flags up to synthetic chain/axis ancestors. See the //Flags// tab.
 
 !! Prerequisites
 
