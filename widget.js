@@ -664,6 +664,23 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
     this.modebarTitle.className = "rr-mindmap-preview-modebar-title";
     this.previewModebar.appendChild(this.modebarTitle);
 
+    // Inline ✎ edit button next to the title. Always opens the body editor
+    // (sets the preview-edit-state tiddler to "yes" → wikitext branch flips
+    // to the rr-text-editor). Necessary because the default view template
+    // requires existing body text to trigger its double-click-to-edit
+    // affordance — empty nodes had no way in.
+    this.modebarEditBtn = this.document.createElement("button");
+    this.modebarEditBtn.type = "button";
+    this.modebarEditBtn.className = "rr-mindmap-modebar-edit-btn";
+    this.modebarEditBtn.textContent = "✎";
+    this.modebarEditBtn.title = "Edit body";
+    this.modebarEditBtn.style.display = "none";
+    var selfEdit = this;
+    this.modebarEditBtn.addEventListener("click", function () {
+        selfEdit.openBodyEditor();
+    });
+    this.previewModebar.appendChild(this.modebarEditBtn);
+
     this.modebarSelect = this.document.createElement("select");
     this.modebarSelect.className = "rr-mindmap-modebar-select";
     var self = this;
@@ -785,6 +802,7 @@ MindmapWidget.prototype.updateModebarTitle = function () {
         this.modebarTitle.removeAttribute("title");
         this.modebarTitle.classList.add("rr-mindmap-preview-modebar-empty");
     }
+    this.updateModebarEditButton();
 };
 
 // Rebuild the modebar dropdown options. Called on render and whenever the
@@ -850,6 +868,7 @@ MindmapWidget.prototype.updateModebarSelectedValue = function () {
     }
     this.modebarSelect.value = found ? value : "body";
     this.updateModebarPlayButton();
+    this.updateModebarEditButton();
 };
 
 // Handle a change in the modebar dropdown.
@@ -2139,6 +2158,29 @@ MindmapWidget.prototype.updateModebarPlayButton = function () {
         this.currentInspectMode() === "presentation" &&
         this.presentationHasSlides(this.currentPresentationTitle());
     this.modebarPlayBtn.style.display = show ? "" : "none";
+};
+
+// Show/hide the modebar ✎ edit button. Visible only when a tiddler-backed
+// node is selected AND inspect mode is "body" — the editor only writes the
+// owning tiddler's text field; slides / presentation modes have their own
+// edit affordances.
+MindmapWidget.prototype.updateModebarEditButton = function () {
+    if (!this.modebarEditBtn) { return; }
+    var show = !!this.selectedBackingTitle() &&
+        this.currentInspectMode &&
+        this.currentInspectMode() === "body";
+    this.modebarEditBtn.style.display = show ? "" : "none";
+};
+
+// Flip the preview pane into edit mode for the currently-selected node.
+// Wired to the modebar ✎ button. Idempotent — already-editing just rewrites
+// "yes".
+MindmapWidget.prototype.openBodyEditor = function () {
+    if (!this.selectedBackingTitle()) { return; }
+    this.wiki.addTiddler({
+        title: this.previewEditStateTitle(),
+        text: "yes"
+    });
 };
 
 exports.mindmap = MindmapWidget;

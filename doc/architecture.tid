@@ -238,7 +238,7 @@ Three things were orthogonal at v0.2.3 — structural source (producer), visible
 
 ''Pane composition:''
 
-* The preview pane carries a modebar above its content: the selected tiddler title on the left, a unified dropdown on the right with `Body / Slides / <each presentation>  / + New presentation…`.
+* The preview pane carries a modebar above its content: the selected tiddler title on the left, a small ''✎'' edit button (visible only when a tiddler-backed node is selected //and// inspect-mode is `body`), then the unified dropdown on the right with `Body / Slides / <each presentation>  / + New presentation…`. Clicking ✎ writes `yes` to `$:/state/rimir/mindmap/<key>/preview-edit-state`, which flips the wikitext branch to render the `rr-text-editor` against the selected tiddler's `text` field. Provides a deterministic entry into edit mode for empty-body nodes (the default `rr-text-view-editable` template's double-click affordance needs existing text to surface).
 * Slide pane (`templates/slide-pane.tid`) walks `[<previewTitle>mm-slides[]]`, renders one card per slide. Edit mode is inline — each field uses `<$edit-text tiddler=<slide-title> field="...">` so keystrokes write through. No buffer state.
 * `+ Add slide` dispatches the `rr-mindmap-add-slide` widget message; the widget creates a blank slide tiddler via `lib/slide-tiddlers.addSlide()` and writes the new title to `$:/state/rimir/mindmap/<key>/slide-editing` so the new slide opens in edit mode immediately.
 * Up / Down / Delete in the slide card are pure wikitext: `<$action-listops>` on the owner's `mm.slide-order` (using the `move:N` / `-` operators), plus `<$action-deletetiddler>` for delete.

@@ -171,6 +171,8 @@ Body is a TW list of axis-ids. ''When present, it fully replaces the template's 
 |!Arg |!Default |!Purpose |
 |`area` |— |Required when `include-areas-root` is `no`. Knowledge area id (e.g. `llm`) — determines the title prefix used as the tree root |
 |`delimiter` |`/` |Path delimiter |
+|`area-tag` |`$:/tags/rimir/knowledge-app/area` |Tag identifying area tiddlers. Override to host a parallel set of areas (e.g. `$:/tags/rimir/priv-app/knowledge-area` for priv-app's private knowledge trees) without polluting the public knowledge-app area list. Forest mode and single-area mode both honour this tag |
+|`root-prefix` |`knowledge` |Title-path root above the area id. Default `knowledge` → tree lives at `knowledge/<area>/…`. Set to e.g. `private/knowledge` to host trees at `private/knowledge/<area>/…`. Multi-segment values are split on `delimiter`. Threaded through `produce()`, `rootTitle()`, and `refreshFilter()`; `applyOps` is unaffected because it operates on the node's full title |
 |`include-areas-root` |`no` |If `yes`, build a forest of all areas under a synthetic "Knowledge" root |
 |`label-field` |`title` |Tiddler field driving the visible node label (see view fields) |
 |`focus-title` |— |Re-root the MDOM at this subtree. Composes with `slides-only` (re-root first, then prune) |

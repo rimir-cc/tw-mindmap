@@ -32,7 +32,8 @@ var slideTiddlers = require("$:/plugins/rimir/mindmap/lib/slide-tiddlers.js");
 var PRODUCER_NAME = "knowledge-tree";
 var ID_PREFIX = "kt:";
 var TYPES_TIDDLER = "$:/config/rimir/knowledge-app/types";
-var AREA_TAG = "$:/tags/rimir/knowledge-app/area";
+var DEFAULT_AREA_TAG = "$:/tags/rimir/knowledge-app/area";
+var DEFAULT_ROOT_PREFIX = "knowledge";
 // Slide tiddlers (mindmap v0.2.7+) live under "<owner>/slides/<slug>" and
 // carry this tag. They are content owned by their parent node, not structural
 // nodes in the tree — exclude them from the producer's enumeration filter.
@@ -77,8 +78,8 @@ function readTypeIndex(wiki) {
     }
 }
 
-function readAreas(wiki) {
-    var titles = wiki.filterTiddlers("[all[shadows+tiddlers]tag[" + AREA_TAG + "]]");
+function readAreas(wiki, areaTag) {
+    var titles = wiki.filterTiddlers("[all[shadows+tiddlers]tag[" + (areaTag || DEFAULT_AREA_TAG) + "]]");
     var areas = [];
     for (var i = 0; i < titles.length; i++) {
         var tiddler = wiki.getTiddler(titles[i]);
@@ -207,6 +208,8 @@ exports.describe = function () {
         args: [
             { key: "area",      required: true,  description: "Knowledge area id (e.g. 'llm'). Determines the title prefix used as the tree root." },
             { key: "delimiter", default: "/",    description: "Path delimiter (default '/')" },
+            { key: "area-tag",  default: DEFAULT_AREA_TAG, description: "Tag identifying area tiddlers. Override to host a parallel set of areas (e.g. private knowledge in priv-app)." },
+            { key: "root-prefix", default: DEFAULT_ROOT_PREFIX, description: "Title-path root above the area id. Default 'knowledge'. Set to e.g. 'private/knowledge' to host trees under a different namespace; multi-segment values are split on `delimiter`." },
             { key: "include-areas-root", default: "no", description: "If 'yes', render a forest of all areas. The `area` arg is ignored." },
             { key: "label-field", default: "title", description: "Tiddler field used as the visible node label. 'title' (default) uses the leaf path-segment; 'caption' (or any other field) decouples display from the structural identity — rename only edits the chosen field, title is preserved." },
             { key: "slides-only", default: "no", description: "If 'yes', the tree is pruned to nodes that have at least one slide OR have a descendant with slides — i.e. the presentation-eligible spine of the area. Composes with focus mode (re-rooting happens first, then pruning)." }
@@ -217,8 +220,11 @@ exports.describe = function () {
 exports.produce = function (args, wiki) {
     args = args || {};
     var typeIndex = readTypeIndex(wiki);
-    var areas = readAreas(wiki);
     var delimiter = args.delimiter || "/";
+    var areaTag = trim(args["area-tag"] || "") || DEFAULT_AREA_TAG;
+    var rootPrefix = trim(args["root-prefix"] || "") || DEFAULT_ROOT_PREFIX;
+    var rootPrefixSegmentsBase = rootPrefix.split(delimiter).filter(function (s) { return s.length > 0; });
+    var areas = readAreas(wiki, areaTag);
 
     // Forest mode: all areas under a synthetic "Knowledge" root.
     if (args["include-areas-root"] === "yes" || args["include-areas-root"] === true) {
@@ -226,11 +232,11 @@ exports.produce = function (args, wiki) {
         for (var i = 0; i < areas.length; i++) {
             var area = areas[i];
             if (!area.id) { continue; }
-            var areaPrefix = "knowledge" + delimiter + area.id + delimiter;
+            var areaPrefix = rootPrefix + delimiter + area.id + delimiter;
             var titles = wiki.filterTiddlers("[all[shadows+tiddlers]prefix[" + areaPrefix + "]!tag[" + SLIDE_TAG + "]]");
             var areaRoot = filterTree._buildTree(titles, {
                 delimiter: delimiter,
-                _rootPrefix: ["knowledge", area.id],
+                _rootPrefix: rootPrefixSegmentsBase.concat([area.id]),
                 "root-label": area.caption || area.id,
                 "body-field": "text"
             }, wiki);
@@ -276,7 +282,7 @@ exports.produce = function (args, wiki) {
         throw new Error("knowledge-tree: 'area' argument is required");
     }
     var areaMeta = findAreaById(areas, areaId);
-    var areaPrefix = "knowledge" + delimiter + areaId;
+    var areaPrefix = rootPrefix + delimiter + areaId;
 
     // Focus mode: re-root the MDOM at a deeper title under the area. The
     // focus-title arg is the full tiddler title (e.g. "knowledge/llm/agents")
@@ -294,7 +300,7 @@ exports.produce = function (args, wiki) {
         prefix = focusTitle + delimiter;
     } else {
         rootTitle = areaPrefix;
-        rootPrefixSegments = ["knowledge", areaId];
+        rootPrefixSegments = rootPrefixSegmentsBase.concat([areaId]);
         prefix = areaPrefix + delimiter;
     }
 
@@ -412,8 +418,9 @@ exports.rootTitle = function (args) {
         return null;
     }
     var delimiter = args.delimiter || "/";
+    var rootPrefix = trim(args["root-prefix"] || "") || DEFAULT_ROOT_PREFIX;
     var areaId = trim(args.area || "");
-    return areaId ? ("knowledge" + delimiter + areaId) : null;
+    return areaId ? (rootPrefix + delimiter + areaId) : null;
 };
 
 // Used by structural-ops.routeOp to count cascade victims before applying.
@@ -619,17 +626,19 @@ exports._siblingSlugs = siblingSlugs;
 exports.refreshFilter = function (args) {
     args = args || {};
     var delimiter = args.delimiter || "/";
+    var areaTag = trim(args["area-tag"] || "") || DEFAULT_AREA_TAG;
+    var rootPrefix = trim(args["root-prefix"] || "") || DEFAULT_ROOT_PREFIX;
     if (args["include-areas-root"] === "yes" || args["include-areas-root"] === true) {
-        // Any tiddler under knowledge/<area>/ AND area-tagged tiddlers.
+        // Any tiddler under <rootPrefix>/<area>/ AND area-tagged tiddlers.
         // Slide tiddlers excluded — they don't affect tree shape, only the
         // owner's mm.slide-order field (which lives ON the owner and is
         // already covered). Watching them would trigger wasteful reproduces
         // on every slide-body keystroke.
-        return "[all[shadows+tiddlers]prefix[knowledge" + delimiter + "]!tag[" + SLIDE_TAG + "]] [all[shadows+tiddlers]tag[" + AREA_TAG + "]] [[" + TYPES_TIDDLER + "]]";
+        return "[all[shadows+tiddlers]prefix[" + rootPrefix + delimiter + "]!tag[" + SLIDE_TAG + "]] [all[shadows+tiddlers]tag[" + areaTag + "]] [[" + TYPES_TIDDLER + "]]";
     }
     var areaId = trim(args.area || "");
     if (!areaId) { return null; }
-    var areaPrefix = "knowledge" + delimiter + areaId;
+    var areaPrefix = rootPrefix + delimiter + areaId;
     var focusTitle = trim(args["focus-title"] || "");
     if (focusTitle && (focusTitle === areaPrefix || focusTitle.indexOf(areaPrefix + delimiter) === 0)) {
         return "[all[shadows+tiddlers]prefix[" + focusTitle + delimiter + "]!tag[" + SLIDE_TAG + "]] [[" + focusTitle + "]] [[" + TYPES_TIDDLER + "]]";
