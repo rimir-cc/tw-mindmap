@@ -572,11 +572,17 @@ MindmapWidget.prototype.initEngine = function () {
     if (typeof instance.on === "function") {
         var self = this;
         instance.on("op", function (op) { self.handleEngineOp(op); });
-        // Canvas-originated selection. Clears the link-navigation breadcrumb
-        // before falling through to the shared handleSelect — the breadcrumb
-        // tracks only link-click hops, not direct canvas selection.
+        // Selection event. The engine fires this BOTH for user canvas clicks
+        // AND as a side-effect of our programmatic engine.focus() (mind-
+        // elixir's adapter emits select on selectNode). We want
+        // canvas-originated clicks to clear the breadcrumb, but programmatic
+        // focus (from selectByTitle) is part of a link-click flow that
+        // pushed a fresh entry → must preserve it. selectByTitle sets
+        // `_suppressBreadcrumbClear` around the focus call as a one-shot.
         instance.on("select", function (nodeId) {
-            self.clearBreadcrumb();
+            if (!self._suppressBreadcrumbClear) {
+                self.clearBreadcrumb();
+            }
             self.handleSelect(nodeId);
         });
     }
@@ -2269,7 +2275,14 @@ MindmapWidget.prototype.selectByTitle = function (title) {
     var nodeId = producer.idForTitle(title);
     if (!nodeId) { return false; }
     if (this.engineInstance && typeof this.engineInstance.focus === "function") {
+        // Suppress the engine's emitted-select breadcrumb-clear for this
+        // one programmatic focus — engines (mind-elixir included) fire
+        // their internal selection event synchronously inside selectNode,
+        // and our wrapper would otherwise wipe the breadcrumb entry the
+        // caller just pushed in handlePreviewLinkClick.
+        this._suppressBreadcrumbClear = true;
         try { this.engineInstance.focus(nodeId); } catch (e) { /* engine bug, ignore */ }
+        this._suppressBreadcrumbClear = false;
     }
     this.handleSelect(nodeId);
     return true;
