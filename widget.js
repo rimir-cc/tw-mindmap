@@ -2032,6 +2032,22 @@ MindmapWidget.prototype.isInSubtree = function (title) {
     return title === root || title.indexOf(root + delimiter) === 0;
 };
 
+// Create a missing in-subtree tiddler then select it AFTER the next-tick
+// refresh cycle. The wiki dispatches addTiddler change events on nextTick;
+// the widget's refresh runs on that tick → reproduce → engine.update gives
+// the engine the new node. If we called selectByTitle synchronously,
+// engine.focus(nodeId) would fire while the engine still lacks the node →
+// silent no-op → the original selection stays visually highlighted, and
+// clicking it again wouldn't re-emit a select event (engines suppress
+// no-change re-selects). Deferring select by setTimeout(0) puts it after
+// the refresh in the same FIFO timer queue.
+MindmapWidget.prototype.createAndSelect = function (target) {
+    if (!target) { return; }
+    this.createMissingInSubtree(target);
+    var self = this;
+    setTimeout(function () { self.selectByTitle(target); }, 0);
+};
+
 // Create a missing in-subtree tiddler via the producer's applyOps addNode op
 // so the new tiddler gets the correct kn.type (per chooseNewNodeType strategy)
 // and is treated identically to a Tab/Enter add-child.
@@ -2169,10 +2185,11 @@ MindmapWidget.prototype.handlePreviewLinkClick = function (event) {
     try { event.event.preventDefault(); } catch (e) {}
     if (this.isInSubtree(target)) {
         this.pushBreadcrumb(this.selectedBackingTitle());
-        if (!this.wiki.tiddlerExists(target)) {
-            this.createMissingInSubtree(target);
+        if (this.wiki.tiddlerExists(target)) {
+            this.selectByTitle(target);
+        } else {
+            this.createAndSelect(target);
         }
-        this.selectByTitle(target);
         return false;
     }
     // Fallback: when the namespace prettylink rule couldn't resolve the
@@ -2182,8 +2199,7 @@ MindmapWidget.prototype.handlePreviewLinkClick = function (event) {
     var creationCandidate = this.resolveAsCreationCandidate(target);
     if (creationCandidate) {
         this.pushBreadcrumb(this.selectedBackingTitle());
-        this.createMissingInSubtree(creationCandidate);
-        this.selectByTitle(creationCandidate);
+        this.createAndSelect(creationCandidate);
         return false;
     }
     // Out-of-subtree → mapping → modal, otherwise straight to new tab.
