@@ -2064,6 +2064,31 @@ MindmapWidget.prototype.createMissingInSubtree = function (target) {
     }
 };
 
+// Self-prefix fallback for raw refs left unresolved by the namespace
+// prettylink rule. When the user types [[stock]] (or any other bare /
+// relative ref) inside a note's body, the namespace resolver's walk-up
+// won't find a match if the candidate doesn't exist anywhere; the link's
+// `to=` therefore stays as the raw ref. Without this fallback those clicks
+// would hit the out-of-subtree branch and open a new browser tab to
+// http://…/#stock — surprising, since the user clearly meant "create a
+// child of the current note". So: if (a) we have a current selection
+// inside the subtree, (b) the ref is not an absolute system-path, and (c)
+// `<current>/<ref>` lands inside the subtree, return that candidate as the
+// creation target.
+MindmapWidget.prototype.resolveAsCreationCandidate = function (rawRef) {
+    if (!rawRef || typeof rawRef !== "string") { return null; }
+    var trimmed = rawRef.replace(/^\s+|\s+$/g, "");
+    if (!trimmed) { return null; }
+    // Skip absolute system-tiddler paths and obvious URL refs.
+    if (trimmed.charAt(0) === "$") { return null; }
+    if (trimmed.indexOf("://") >= 0) { return null; }
+    var currentTitle = this.selectedBackingTitle();
+    if (!currentTitle || !this.isInSubtree(currentTitle)) { return null; }
+    var candidate = currentTitle + "/" + trimmed;
+    if (this.isInSubtree(candidate)) { return candidate; }
+    return null;
+};
+
 // Open the supplied title in a new browser tab via the appify permalink
 // workaround (target=_blank with hash-encoded title — same-tab navigation
 // would inherit the appify state and dump the user back into the app).
@@ -2148,13 +2173,25 @@ MindmapWidget.prototype.handlePreviewLinkClick = function (event) {
             this.createMissingInSubtree(target);
         }
         this.selectByTitle(target);
+        return false;
+    }
+    // Fallback: when the namespace prettylink rule couldn't resolve the
+    // raw ref (e.g. user typed [[stock]] in a note inside the subtree but
+    // nothing called "stock" exists anywhere), treat it as a self-prefix
+    // creation target relative to the current selection.
+    var creationCandidate = this.resolveAsCreationCandidate(target);
+    if (creationCandidate) {
+        this.pushBreadcrumb(this.selectedBackingTitle());
+        this.createMissingInSubtree(creationCandidate);
+        this.selectByTitle(creationCandidate);
+        return false;
+    }
+    // Out-of-subtree → mapping → modal, otherwise straight to new tab.
+    var mapping = this.findExternalJumpMapping(target);
+    if (mapping) {
+        this.openExternalJumpModal(target, mapping);
     } else {
-        var mapping = this.findExternalJumpMapping(target);
-        if (mapping) {
-            this.openExternalJumpModal(target, mapping);
-        } else {
-            this.openInNewTab(target);
-        }
+        this.openInNewTab(target);
     }
     return false;
 };
