@@ -1,0 +1,65 @@
+title: $:/plugins/rimir/mindmap/templates/external-jump-modal
+type: text/vnd.tiddlywiki
+
+\whitespace trim
+
+<!-- External-jump confirmation modal. Reveal-mounts on the pending state
+     tiddler written by handlePreviewLinkClick when a clicked link targets a
+     tiddler outside the current mindmap's subtree AND a tagged-config
+     mapping ($:/tags/rimir/mindmap/external-jump) matches the target.
+     The mapping carries:
+       title-prefix     – matched against the click target
+       target-label     – human label shown in the modal
+       target-actions   – wikitext actions fired on Follow (typically
+                          <$action-statewrap-set>'s to switch appify channels)
+       target-view      – (optional) view-tiddler title; when set, the click
+                          target is written to that view's pending-select
+                          state so the destination mindmap auto-selects it
+                          on its next render
+     Mount via:
+       <$transclude $tiddler="$:/plugins/rimir/mindmap/templates/external-jump-modal" $mode="block"/>
+     alongside other modal mounts in the host view. -->
+
+<$reveal state="$:/state/rimir/mindmap/external-jump/pending" type="nomatch" text="">
+<$let
+  pending="$:/state/rimir/mindmap/external-jump/pending"
+  target={{{ [[$:/state/rimir/mindmap/external-jump/pending]get[target-title]] }}}
+  mappingTitle={{{ [[$:/state/rimir/mindmap/external-jump/pending]get[mapping-title]] }}}
+  label={{{ [[$:/state/rimir/mindmap/external-jump/pending]get[target-label]] }}}
+  widgetKey={{{ [[$:/state/rimir/mindmap/external-jump/pending]get[widget-key]] }}}
+  targetView={{{ [<mappingTitle>get[target-view]] }}}
+  pendingSelectTiddler={{{ [<targetView>!is[blank]] :map[[$:/state/rimir/mindmap/]addsuffix<currentTiddler>addsuffix[/pending-select]] }}}
+  openInNewTabTiddler={{{ [<widgetKey>!is[blank]] :map[[$:/state/rimir/mindmap/]addsuffix<currentTiddler>addsuffix[/open-in-new-tab]] }}}
+>
+<div class="rr-mindmap-extjump-overlay">
+<div class="rr-mindmap-extjump-modal">
+<div class="rr-mindmap-extjump-modal-header">External link</div>
+<div class="rr-mindmap-extjump-modal-body">
+This link points to <code><<target>></code>, which lives outside the current mindmap.
+
+A configured target is available: <strong><<label>></strong>.
+</div>
+<div class="rr-mindmap-extjump-modal-actions">
+<$button class="rr-link-btn" actions={{{ [<mappingTitle>get[target-actions]] }}}>
+<$list filter="[<pendingSelectTiddler>!is[blank]]" variable="psTid">
+<$action-setfield $tiddler=<<psTid>> text=<<target>>/>
+</$list>
+<$action-deletetiddler $tiddler=<<pending>>/>
+Follow → <<label>>
+</$button>
+<$button class="tc-btn-invisible">
+<$list filter="[<openInNewTabTiddler>!is[blank]]" variable="oTid">
+<$action-setfield $tiddler=<<oTid>> text=<<target>>/>
+</$list>
+<$action-deletetiddler $tiddler=<<pending>>/>
+Open in new tab
+</$button>
+<$button class="tc-btn-invisible" style="color:<<colour muted-foreground>>;">
+<$action-deletetiddler $tiddler=<<pending>>/>
+Cancel
+</$button>
+</div>
+</div>
+</div>
+</$let>
+</$reveal>

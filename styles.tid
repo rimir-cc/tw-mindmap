@@ -80,17 +80,41 @@ type: text/vnd.tiddlywiki
     margin-bottom: 8px;
     word-break: break-all;
 }
-/* Modebar at the top of the preview pane: selected-tiddler title on the left,
-   inspect-mode dropdown (Body / Slides) on the right. The dropdown lives here
-   — not over the canvas — because it controls what the preview shows. */
+/* Modebar at the top of the preview pane. Vertical container: top row is the
+   optional link-navigation breadcrumb, bottom row holds the selected-tiddler
+   title + ✎ edit btn + inspect-mode dropdown (Body / Slides / presentation) +
+   ▶ play btn. The dropdown lives here — not over the canvas — because it
+   controls what the preview shows. */
 .rr-mindmap-preview-modebar {
     display: flex;
-    align-items: center;
-    gap: 0.6em;
+    flex-direction: column;
+    gap: 4px;
     padding-bottom: 8px;
     margin-bottom: 10px;
     border-bottom: 1px solid <<colour tiddler-border>>;
 }
+.rr-mindmap-preview-modebar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+}
+.rr-mindmap-preview-breadcrumb {
+    font-size: 0.8em;
+    line-height: 1.4;
+    color: <<colour muted-foreground>>;
+}
+.rr-mindmap-preview-breadcrumb:empty { display: none; }
+.rr-mindmap-preview-breadcrumb-item {
+    background: transparent;
+    border: 0;
+    padding: 0 2px;
+    color: <<colour primary>>;
+    cursor: pointer;
+    font-size: inherit;
+    font-family: var(--theme-monospace-font, monospace);
+}
+.rr-mindmap-preview-breadcrumb-item:hover { text-decoration: underline; }
+.rr-mindmap-preview-breadcrumb-sep { margin: 0 3px; opacity: 0.55; }
 .rr-mindmap-preview-modebar-title {
     flex: 1 1 auto;
     font-family: var(--theme-monospace-font, monospace);
@@ -261,6 +285,56 @@ type: text/vnd.tiddlywiki
     border-top: 1px solid <<colour tiddler-border>>;
     display: flex;
     gap: 12px;
+    justify-content: flex-end;
+}
+
+/* External-jump modal — fires when a preview-pane link clicked points to a
+   tiddler outside the current mindmap's subtree AND a configured mapping
+   matches. Visual style mirrors the cascade-confirm modal. */
+.rr-mindmap-extjump-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9002;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    isolation: isolate;
+}
+.rr-mindmap-extjump-modal {
+    position: relative;
+    z-index: 1;
+    max-width: 520px;
+    width: 90vw;
+    background: <<colour tiddler-background>>;
+    color: <<colour foreground>>;
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+.rr-mindmap-extjump-modal-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid <<colour tiddler-border>>;
+    background: <<colour message-background>>;
+    font-weight: 600;
+}
+.rr-mindmap-extjump-modal-body {
+    padding: 16px;
+    line-height: 1.5;
+}
+.rr-mindmap-extjump-modal-body code {
+    font-family: var(--theme-monospace-font, monospace);
+    font-size: 0.95em;
+    background: rgba(0, 0, 0, 0.04);
+    padding: 0 4px;
+    border-radius: 3px;
+}
+.rr-mindmap-extjump-modal-body strong { font-weight: 600; }
+.rr-mindmap-extjump-modal-actions {
+    padding: 12px 16px;
+    border-top: 1px solid <<colour tiddler-border>>;
+    display: flex;
+    gap: 8px;
     justify-content: flex-end;
 }
 

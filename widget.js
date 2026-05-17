@@ -72,7 +72,10 @@ function MindmapWidget(parseTreeNode, options) {
     // producer node-id and asks the engine to focus/highlight it.
     this.addEventListeners([
         { type: "rr-mindmap-select-node-by-title", handler: "handleSelectNodeByTitle" },
-        { type: "rr-mindmap-add-slide", handler: "handleAddSlide" }
+        { type: "rr-mindmap-add-slide", handler: "handleAddSlide" },
+        { type: "rr-mindmap-breadcrumb-jump", handler: "handleBreadcrumbJump" },
+        { type: "rr-mindmap-open-in-new-tab", handler: "handleOpenInNewTab" },
+        { type: "tm-navigate", handler: "handlePreviewLinkClick" }
     ]);
 }
 
@@ -569,8 +572,18 @@ MindmapWidget.prototype.initEngine = function () {
     if (typeof instance.on === "function") {
         var self = this;
         instance.on("op", function (op) { self.handleEngineOp(op); });
-        instance.on("select", function (nodeId) { self.handleSelect(nodeId); });
+        // Canvas-originated selection. Clears the link-navigation breadcrumb
+        // before falling through to the shared handleSelect — the breadcrumb
+        // tracks only link-click hops, not direct canvas selection.
+        instance.on("select", function (nodeId) {
+            self.clearBreadcrumb();
+            self.handleSelect(nodeId);
+        });
     }
+    // After engine init, consume any pending-select state tiddler written by
+    // an external-jump "Follow" from another mindmap. Selects the supplied
+    // title once and clears the state so a future render doesn't re-fire.
+    this.consumePendingSelect();
 };
 
 MindmapWidget.prototype.handleEngineOp = function (op) {
@@ -656,13 +669,26 @@ MindmapWidget.prototype.previewKindStateTitle = function () {
 MindmapWidget.prototype.renderPreviewChildren = function () {
     if (!this.previewPane) { return; }
 
-    // Modebar
+    // Modebar — a vertical container holding (a) the link-history breadcrumb
+    // row above and (b) the existing horizontal row with title + ✎ edit btn
+    // + mode dropdown + ▶ play btn below.
     this.previewModebar = this.document.createElement("div");
     this.previewModebar.className = "rr-mindmap-preview-modebar";
 
+    // Top: breadcrumb row, wikitext-mounted (reacts to state-tiddler changes
+    // for natural refresh as the user navigates link → link).
+    this.modebarBreadcrumb = this.document.createElement("div");
+    this.modebarBreadcrumb.className = "rr-mindmap-preview-breadcrumb";
+    this.previewModebar.appendChild(this.modebarBreadcrumb);
+
+    // Bottom: existing horizontal row.
+    this.modebarRow = this.document.createElement("div");
+    this.modebarRow.className = "rr-mindmap-preview-modebar-row";
+    this.previewModebar.appendChild(this.modebarRow);
+
     this.modebarTitle = this.document.createElement("span");
     this.modebarTitle.className = "rr-mindmap-preview-modebar-title";
-    this.previewModebar.appendChild(this.modebarTitle);
+    this.modebarRow.appendChild(this.modebarTitle);
 
     // Inline ✎ edit button next to the title. Always opens the body editor
     // (sets the preview-edit-state tiddler to "yes" → wikitext branch flips
@@ -679,7 +705,7 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
     this.modebarEditBtn.addEventListener("click", function () {
         selfEdit.openBodyEditor();
     });
-    this.previewModebar.appendChild(this.modebarEditBtn);
+    this.modebarRow.appendChild(this.modebarEditBtn);
 
     this.modebarSelect = this.document.createElement("select");
     this.modebarSelect.className = "rr-mindmap-modebar-select";
@@ -687,7 +713,7 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
     this.modebarSelect.addEventListener("change", function () {
         self.handleModebarSelectChange(self.modebarSelect.value);
     });
-    this.previewModebar.appendChild(this.modebarSelect);
+    this.modebarRow.appendChild(this.modebarSelect);
 
     // Inline ▶ play button next to the dropdown. Visible only when inspect
     // mode is Presentation AND the active deck resolves to ≥1 slide; hidden
@@ -701,9 +727,13 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
     this.modebarPlayBtn.addEventListener("click", function () {
         self.startPresentation();
     });
-    this.previewModebar.appendChild(this.modebarPlayBtn);
+    this.modebarRow.appendChild(this.modebarPlayBtn);
 
     this.previewPane.appendChild(this.previewModebar);
+
+    // Render the breadcrumb wikitext widget tree into modebarBreadcrumb so
+    // changes to the state tiddler refresh naturally without a JS rebuild.
+    this.renderBreadcrumbWidget();
 
     // Content container — wikitext widget tree renders here.
     this.previewContent = this.document.createElement("div");
@@ -784,6 +814,31 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
     });
     widgetNode.render(this.previewContent, null);
     this.previewWidget = widgetNode;
+};
+
+// Mount a small wikitext widget tree into modebarBreadcrumb that renders the
+// link-navigation history as a sequence of clickable buttons (each fires
+// rr-mindmap-breadcrumb-jump with the 1-based index). The list refreshes
+// automatically when the breadcrumb state tiddler changes.
+MindmapWidget.prototype.renderBreadcrumbWidget = function () {
+    if (!this.modebarBreadcrumb) { return; }
+    var wikitext =
+        "<$list filter='[<__bcstate__>get[text]enlist-input[]]' variable='bcTitle' counter='bcIndex'>" +
+        "<$button class='rr-mindmap-preview-breadcrumb-item' " +
+        "message='rr-mindmap-breadcrumb-jump' param=<<bcIndex>>>" +
+        "<$text text={{{ [<bcTitle>get[caption]!is[blank]] ~[<bcTitle>split[/]last[1]] ~[<bcTitle>] }}}/>" +
+        "</$button>" +
+        "<span class='rr-mindmap-preview-breadcrumb-sep'>›</span>" +
+        "</$list>";
+    var parser = this.wiki.parseText("text/vnd.tiddlywiki", wikitext, { parseAsInline: false });
+    if (!parser) { return; }
+    var widgetNode = this.wiki.makeWidget(parser, {
+        parentWidget: this,
+        document: this.document,
+        variables: { __bcstate__: this.breadcrumbStateTitle() }
+    });
+    widgetNode.render(this.modebarBreadcrumb, null);
+    this.breadcrumbWidget = widgetNode;
 };
 
 // Update the modebar title span to reflect the currently-selected tiddler
@@ -1306,6 +1361,9 @@ MindmapWidget.prototype.forwardPreviewRefresh = function (changedTiddlers) {
     if (this.previewWidget) {
         try { this.previewWidget.refresh(changedTiddlers); } catch (e) { /* ignore */ }
     }
+    if (this.breadcrumbWidget) {
+        try { this.breadcrumbWidget.refresh(changedTiddlers); } catch (e) { /* ignore */ }
+    }
 };
 
 // React to changes that affect the modebar's presentation choices or the
@@ -1355,6 +1413,17 @@ MindmapWidget.prototype.refresh = function (changedTiddlers) {
     // Cascade-confirm apply signal from the modal.
     if (changedTiddlers[CASCADE_APPLY_TIDDLER]) {
         this.maybeApplyPendingCascade();
+    }
+    // External-jump modal "Open in new tab" signal — the modal is rendered as
+    // a sibling so it can't dispatch widget messages back into this tree;
+    // bridge via a per-widget state tiddler instead.
+    var openTabState = this.openInNewTabStateTitle();
+    if (changedTiddlers[openTabState]) {
+        var pendingTarget = this.wiki.getTiddlerText(openTabState, "");
+        if (pendingTarget) {
+            try { this.wiki.deleteTiddler(openTabState); } catch (e) {}
+            this.openInNewTab(pendingTarget);
+        }
     }
     var baseChanged = false;
     if (this.lastWatchedTitles) {
@@ -1912,27 +1981,254 @@ MindmapWidget.prototype.handleAddSlide = function (event) {
     }));
 };
 
-// Handler for the rr-mindmap-select-node-by-title custom message dispatched
-// from the presentation pane. Translates the supplied tiddler title back into
-// a producer node-id via the producer's idForTitle helper, then asks the
-// engine to focus/highlight it. Also updates the widget's selectedNodeId so
-// the actions panel + preview pane reflect the new selection.
-MindmapWidget.prototype.handleSelectNodeByTitle = function (event) {
-    var title = event && event.paramObject && event.paramObject.title;
+// State tiddler holding the link-navigation breadcrumb history (TW list-field
+// of titles, most-recent at the end). Pushed on in-tree link clicks; cleared
+// on canvas-originated selection; truncated on breadcrumb item click.
+MindmapWidget.prototype.breadcrumbStateTitle = function () {
+    return "$:/state/rimir/mindmap/" + this.previewStateKey() + "/breadcrumb-history";
+};
+
+// State tiddler the widget consults on engine-init to auto-select a node
+// when the user "Follows" an external-jump from another mindmap. Cleared
+// after consumption.
+MindmapWidget.prototype.pendingSelectStateTitle = function () {
+    return "$:/state/rimir/mindmap/" + this.previewStateKey() + "/pending-select";
+};
+
+MindmapWidget.prototype.pushBreadcrumb = function (title) {
     if (!title) { return; }
+    var stateTitle = this.breadcrumbStateTitle();
+    var existing = this.wiki.getTiddlerText(stateTitle, "");
+    var list = $tw.utils.parseStringArray(existing).slice();
+    list.push(title);
+    this.wiki.setText(stateTitle, "text", null, $tw.utils.stringifyList(list));
+};
+
+MindmapWidget.prototype.clearBreadcrumb = function () {
+    var stateTitle = this.breadcrumbStateTitle();
+    var existing = this.wiki.getTiddlerText(stateTitle, "");
+    if (!existing) { return; } // no-op when already empty (avoids refresh churn)
+    this.wiki.setText(stateTitle, "text", null, "");
+};
+
+MindmapWidget.prototype.truncateBreadcrumbAt = function (index) {
+    var stateTitle = this.breadcrumbStateTitle();
+    var existing = this.wiki.getTiddlerText(stateTitle, "");
+    var list = $tw.utils.parseStringArray(existing).slice(0, index);
+    this.wiki.setText(stateTitle, "text", null, $tw.utils.stringifyList(list));
+};
+
+// Is the given title inside the current mindmap's subtree? Uses the
+// producer's rootTitle() — works for any title-path-based producer
+// (knowledge-tree definitely; filter-tree / grouped-tree without rootTitle
+// gracefully return false, so all clicks go to the external-jump path).
+MindmapWidget.prototype.isInSubtree = function (title) {
+    if (!title) { return false; }
     var producer = findProducerByName(this.producerName);
-    if (!producer || typeof producer.idForTitle !== "function") { return; }
+    if (!producer || typeof producer.rootTitle !== "function") { return false; }
+    var root = producer.rootTitle(this.effectiveProducerArgs());
+    if (!root) { return false; }
+    var delimiter = (this.producerArgs && this.producerArgs.delimiter) || "/";
+    return title === root || title.indexOf(root + delimiter) === 0;
+};
+
+// Create a missing in-subtree tiddler via the producer's applyOps addNode op
+// so the new tiddler gets the correct kn.type (per chooseNewNodeType strategy)
+// and is treated identically to a Tab/Enter add-child.
+MindmapWidget.prototype.createMissingInSubtree = function (target) {
+    if (!target) { return; }
+    var producer = findProducerByName(this.producerName);
+    if (!producer || typeof producer.applyOps !== "function") {
+        // Fallback for producers without applyOps: bare tiddler with sensible
+        // defaults so the new node at least appears as a leaf in the tree.
+        this.wiki.addTiddler(new $tw.Tiddler(this.wiki.getCreationFields(), {
+            title: target,
+            text: "",
+            "kn.type": "note",
+            tags: "$:/tags/rimir/knowledge-app/note"
+        }, this.wiki.getModificationFields()));
+        return;
+    }
+    var i = target.lastIndexOf("/");
+    if (i < 0) { return; } // shouldn't happen — in-subtree implies a slashed path
+    var parentTitle = target.substring(0, i);
+    var leaf = target.substring(i + 1);
+    try {
+        producer.applyOps([{
+            op: "addNode",
+            parent: "kt:" + parentTitle,
+            node: { label: leaf }
+        }], this.effectiveProducerArgs(), this.wiki);
+    } catch (e) {
+        console.error("[mindmap.createMissingInSubtree]", target, e);
+    }
+};
+
+// Open the supplied title in a new browser tab via the appify permalink
+// workaround (target=_blank with hash-encoded title — same-tab navigation
+// would inherit the appify state and dump the user back into the app).
+MindmapWidget.prototype.openInNewTab = function (title) {
+    if (!title) { return; }
+    var win = this.document.defaultView;
+    if (!win) { return; }
+    try {
+        win.open(win.location.pathname + "#" + encodeURIComponent(title), "_blank");
+    } catch (e) {
+        console.error("[mindmap.openInNewTab]", title, e);
+    }
+};
+
+// Look up an external-jump mapping for the supplied target title. Mappings
+// are tiddlers tagged $:/tags/rimir/mindmap/external-jump with fields
+// title-prefix / target-label / target-actions [/ target-view]. Longest
+// matching prefix wins — lets a specific mapping override a generic one.
+MindmapWidget.prototype.findExternalJumpMapping = function (target) {
+    if (!target) { return null; }
+    var titles = this.wiki.filterTiddlers(
+        "[all[shadows+tiddlers]tag[$:/tags/rimir/mindmap/external-jump]]"
+    );
+    var best = null, bestLen = 0;
+    for (var i = 0; i < titles.length; i++) {
+        var t = this.wiki.getTiddler(titles[i]);
+        if (!t) { continue; }
+        var prefix = (t.fields["title-prefix"] || "").replace(/^\s+|\s+$/g, "");
+        if (!prefix) { continue; }
+        if (target === prefix || target.indexOf(prefix + "/") === 0) {
+            if (prefix.length > bestLen) { best = t; bestLen = prefix.length; }
+        }
+    }
+    return best;
+};
+
+// State tiddler the widget watches to perform "open in new tab" actions
+// dispatched by the modal (which is rendered as a sibling, so widget
+// messages can't bubble back). Scoped per-widget via stateKey.
+MindmapWidget.prototype.openInNewTabStateTitle = function () {
+    return "$:/state/rimir/mindmap/" + this.previewStateKey() + "/open-in-new-tab";
+};
+
+// Trigger the external-jump modal by writing the pending state tiddler. The
+// modal template (external-jump-modal.tid) reveal-mounts on this tiddler.
+// widget-key is included so the modal's "Open in new tab" branch can write
+// back to THIS widget's open-in-new-tab state tiddler (modal is rendered as
+// a sibling and can't dispatch messages back through the widget tree).
+MindmapWidget.prototype.openExternalJumpModal = function (target, mapping) {
+    if (!target || !mapping) { return; }
+    this.wiki.addTiddler(new $tw.Tiddler(this.wiki.getCreationFields(), {
+        title: "$:/state/rimir/mindmap/external-jump/pending",
+        text: "yes",
+        "target-title": target,
+        "mapping-title": mapping.fields.title,
+        "target-label": mapping.fields["target-label"]
+            || mapping.fields["target-view"]
+            || "external",
+        "widget-key": this.previewStateKey()
+    }, this.wiki.getModificationFields()));
+};
+
+// Intercept tm-navigate events bubbling up from links inside the preview
+// pane. Three outcomes:
+//   in-subtree + tiddler exists  → push current title to breadcrumb + select
+//   in-subtree + tiddler missing → create via applyOps + push + select
+//   out-of-subtree               → consult external-jump map; modal or new tab
+// Returns false to stop further propagation when we handle the event.
+MindmapWidget.prototype.handlePreviewLinkClick = function (event) {
+    if (!this.previewPane || !event || !event.event || !event.event.target) {
+        return true; // let bubble — not our concern
+    }
+    if (!this.previewPane.contains(event.event.target)) {
+        return true; // originated outside the preview pane
+    }
+    var target = event.navigateTo;
+    if (!target) { return true; }
+    try { event.event.preventDefault(); } catch (e) {}
+    if (this.isInSubtree(target)) {
+        this.pushBreadcrumb(this.selectedBackingTitle());
+        if (!this.wiki.tiddlerExists(target)) {
+            this.createMissingInSubtree(target);
+        }
+        this.selectByTitle(target);
+    } else {
+        var mapping = this.findExternalJumpMapping(target);
+        if (mapping) {
+            this.openExternalJumpModal(target, mapping);
+        } else {
+            this.openInNewTab(target);
+        }
+    }
+    return false;
+};
+
+// Handler for the rr-mindmap-breadcrumb-jump message. Wikitext list passes
+// a 1-based index via `param`; we truncate the history to keep [0..index-1]
+// (the clicked item itself is dropped and re-applied via selectByTitle —
+// no growth, even on cycles).
+MindmapWidget.prototype.handleBreadcrumbJump = function (event) {
+    var rawIndex = event && event.param;
+    var index = parseInt(rawIndex, 10) - 1;
+    if (isNaN(index) || index < 0) { return false; }
+    var historyText = this.wiki.getTiddlerText(this.breadcrumbStateTitle(), "");
+    var titles = $tw.utils.parseStringArray(historyText);
+    if (index >= titles.length) { return false; }
+    var targetTitle = titles[index];
+    this.truncateBreadcrumbAt(index);
+    this.selectByTitle(targetTitle);
+    return false;
+};
+
+// Handler for the rr-mindmap-open-in-new-tab message. Exposes openInNewTab
+// to wikitext callers (e.g. the external-jump-modal's "Open in new tab"
+// button which can't call window.open directly).
+MindmapWidget.prototype.handleOpenInNewTab = function (event) {
+    var title = event && (event.param || (event.paramObject && event.paramObject.title));
+    if (title) { this.openInNewTab(title); }
+    return false;
+};
+
+// Consume the pending-select state tiddler (if any) — called once after the
+// engine has been initialised. Selects the supplied title and clears the
+// state so refresh cycles don't re-trigger.
+MindmapWidget.prototype.consumePendingSelect = function () {
+    var stateTitle = this.pendingSelectStateTitle();
+    var pending = this.wiki.getTiddlerText(stateTitle, "");
+    if (!pending) { return; }
+    var self = this;
+    // Defer one tick so the engine has finished its layout/render before
+    // we ask it to focus a node id.
+    setTimeout(function () {
+        try { self.selectByTitle(pending); } catch (e) {}
+        try { self.wiki.deleteTiddler(stateTitle); } catch (e) {}
+    }, 0);
+};
+
+// Resolve a tiddler title to a producer node id and focus the engine on it,
+// then update internal selection state. Shared by:
+//   - handleSelectNodeByTitle (presentation playlist click)
+//   - handlePreviewLinkClick (in-tree link click in the preview pane)
+//   - handleBreadcrumbJump (clicking a breadcrumb item)
+//   - missing-tiddler create-on-click flow (after applyOps addNode)
+// Returns true iff a node was selected. Does NOT touch breadcrumb state —
+// callers wrap with push/clear/truncate as appropriate for their context.
+MindmapWidget.prototype.selectByTitle = function (title) {
+    if (!title) { return false; }
+    var producer = findProducerByName(this.producerName);
+    if (!producer || typeof producer.idForTitle !== "function") { return false; }
     var nodeId = producer.idForTitle(title);
-    if (!nodeId) { return; }
-    // Ask the engine to focus the node (mind-elixir: centers + selects it).
-    // The adapter may or may not implement focus — guard accordingly.
+    if (!nodeId) { return false; }
     if (this.engineInstance && typeof this.engineInstance.focus === "function") {
         try { this.engineInstance.focus(nodeId); } catch (e) { /* engine bug, ignore */ }
     }
-    // Synthesize a selection update so the actions panel + preview pane catch
-    // up. The engine may also emit its own select event but we don't rely on
-    // that — different engines behave differently after focus().
     this.handleSelect(nodeId);
+    return true;
+};
+
+// Handler for the rr-mindmap-select-node-by-title custom message dispatched
+// from the presentation pane. Bare passthrough to selectByTitle — does NOT
+// touch the breadcrumb (presentation-click is a separate UX from link-click).
+MindmapWidget.prototype.handleSelectNodeByTitle = function (event) {
+    var title = event && event.paramObject && event.paramObject.title;
+    if (!title) { return; }
+    this.selectByTitle(title);
 };
 
 // Resolve the currently-selected node id to its backing tiddler title via

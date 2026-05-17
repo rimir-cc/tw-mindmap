@@ -292,10 +292,33 @@ The adapter SHOULD:
 |`$:/state/rimir/mindmap/<key>/slides-only` |`yes` when the canvas is pruned to slide-bearing nodes (toolbar toggle) — empty otherwise |
 |`$:/state/rimir/mindmap/<key>/preview-selected` |Currently selected node id (for the preview pane) |
 |`$:/state/rimir/mindmap/<key>/preview-edit-mode` |`yes` while the preview is in inline-edit mode |
+|`$:/state/rimir/mindmap/<key>/breadcrumb-history` |List-field of titles visited via in-preview link clicks. Pushed on link-click, reset on canvas selection, truncated on breadcrumb item click |
+|`$:/state/rimir/mindmap/<key>/pending-select` |Title written by an external-jump "Follow" from another mindmap. Consumed once after engine init (`consumePendingSelect`), then cleared |
+|`$:/state/rimir/mindmap/<key>/open-in-new-tab` |Per-widget bridge written by the external-jump modal's "Open in new tab" branch; the widget's `refresh()` reads and clears, then calls `window.open(…, "_blank")` |
 |`$:/state/rimir/mindmap/pending-cascade` |JSON of the deferred op + count + widget key |
 |`$:/state/rimir/mindmap/pending-cascade-apply` |`yes` when the user confirms the deferred op |
+|`$:/state/rimir/mindmap/external-jump/pending` |Modal trigger written by `handlePreviewLinkClick` when an out-of-subtree click matches a tagged-config mapping. Fields: `target-title`, `mapping-title`, `target-label`, `widget-key` |
 
 `<key>` is the widget's `state=` attribute, else its `view=` / `filter=` value, else `default`. Multiple `$mindmap` widgets sharing a key share state — useful for embedded toolbars, harmful for embedded copies of the same view.
+
+!! Widget messages
+
+|!Message |!Param |!Purpose |
+|`rr-mindmap-select-node-by-title` |`{title}` paramObject |Select a node by its backing tiddler title. Used by the presentation pane's playlist click-to-select |
+|`rr-mindmap-breadcrumb-jump` |1-based `param` index |Truncate the link-history breadcrumb to the clicked position and select that node |
+|`rr-mindmap-open-in-new-tab` |`param` title (or `{title}` paramObject) |Bridge for wikitext callers (inside the widget tree) to invoke `openInNewTab(title)` — uses the appify-safe permalink + `target="_blank"` |
+|`rr-mindmap-add-slide` |`{owner}` paramObject |Create a blank slide tiddler under the owner and open it in inline-edit mode |
+|`tm-navigate` |native `navigateTo` |Intercepted by `handlePreviewLinkClick` when origin is inside the preview pane; classifies into in-subtree / in-subtree-missing / out-of-subtree paths |
+
+!! External-jump tag schema
+
+Tiddlers tagged `$:/tags/rimir/mindmap/external-jump` define title-prefix → destination mappings for the preview-pane's out-of-subtree click handler. Longest matching `title-prefix` wins (so a more specific mapping can override a generic one).
+
+|!Field |!Required |!Purpose |
+|`title-prefix` |yes |Match string. The clicked target matches when `target === prefix` OR `target.startsWith(prefix + "/")` |
+|`target-label` |yes |Human-readable label shown in the modal ("Follow → <label>") |
+|`target-actions` |yes |Wikitext action chain fired on Follow. Typically `<$action-statewrap-set>` to switch appify channels |
+|`target-view` |no |View-tiddler title (e.g. `Mindmap/private-fitness`). When set, the clicked target title is written to `$:/state/rimir/mindmap/<target-view>/pending-select` so the destination mindmap auto-selects the linked node on its next render |
 
 </$fill>
 </$transclude>
