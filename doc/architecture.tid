@@ -179,7 +179,7 @@ The focus title is a structural identity (a tiddler title), so it survives renam
 By default each node's visible `label` is the leaf segment of the underlying tiddler's title. A view can set `mm.label-field` (or the session-state override `$:/state/rimir/mindmap/<key>/label-field`) to any other field — typically `caption` — to decouple display from structural identity. The actions panel includes a `<select>` populated from `$:/config/rimir/mindmap/label-fields` (default `title\ncaption`).
 
 In non-title label-field mode:
-* Producer relabels each tiddler-bearing node from the chosen field. Empty `caption` falls back to leaf segment (stamped `mm:label-derived="title"`); other empty fields render as `UNDEFINED` (stamped `mm:label-status="undefined"`).
+* Producer relabels each tiddler-bearing node from the chosen field. Empty `caption` falls back to leaf segment (stamped `mm:label-derived="title"`); other empty fields render as `UNDEFINED` (stamped `mm:label-status="undefined"`) with the leaf-segment title stashed on `mm:label-fallback-title` so engines can render it as a muted secondary line above the topic.
 * `applyOps.rename` writes the typed value to the chosen field — title is preserved, no cascade.
 * `applyOps.addNode` derives the title slug from the sanitized typed value AND also stamps the typed (unsanitized) label on the chosen field of the new tiddler.
 * `applyOps.reparent` still cascades structurally — only the //label// is decoupled.

@@ -177,8 +177,10 @@ function pruneToSlideBearing(node, wiki) {
 //   labelField === "caption" and field is empty → keep the title-segment
 //     label (the natural identity) and stamp `mm:label-derived = "title"`
 //     so UI can style it muted.
-//   any other field empty → label becomes "UNDEFINED" + stamp
-//     `mm:label-status = "undefined"`. Engines can render that distinctly.
+//   any other field empty → label becomes "UNDEFINED", stamp
+//     `mm:label-status = "undefined"`, and stash the would-have-been leaf
+//     segment on `mm:label-fallback-title` so engines can show the title
+//     as a small secondary line.
 function relabelTree(node, labelField, wiki) {
     if (!node) { return; }
     var sourceTitle = node.attrs && node.attrs["core:tiddler"];
@@ -191,9 +193,13 @@ function relabelTree(node, labelField, wiki) {
             node.attrs = node.attrs || {};
             node.attrs["mm:label-derived"] = "title";
         } else {
+            var fallbackTitle = node.label;
             node.label = "UNDEFINED";
             node.attrs = node.attrs || {};
             node.attrs["mm:label-status"] = "undefined";
+            if (fallbackTitle) {
+                node.attrs["mm:label-fallback-title"] = fallbackTitle;
+            }
         }
     }
     var children = node.children || [];

@@ -72,7 +72,7 @@ The bottom-right actions panel includes a small dropdown that picks the tiddler 
 * drag-rename writes the typed value to the chosen field; the title is preserved (no cascade).
 * `+child` / `+sibling` still derives a sanitized title slug from the typed value, AND stamps the typed value on the chosen field of the new tiddler.
 * reparent still cascades structurally (titles change, references update) — only the label source is decoupled.
-* empty field on the source tiddler falls back to the leaf segment (`caption` mode, marked `mm:label-derived`) or to the literal `UNDEFINED` (any other field, marked `mm:label-status`).
+* empty field on the source tiddler falls back to the leaf segment (`caption` mode, marked `mm:label-derived`) or to the literal `UNDEFINED` (any other field, marked `mm:label-status`); in the latter case the leaf-segment title is shown above the node as a muted secondary line so the missing value isn't context-free.
 
 The list of pickable fields is taken from this config tiddler, one field per line:
 
