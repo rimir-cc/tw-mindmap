@@ -787,9 +787,7 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
         "<%if [<previewKind>!is[blank]] %>" +
         "<div class='rr-mindmap-preview-empty'>No preview template configured for kind: <$text text=<<previewKind>>/></div>" +
         "<%else%>" +
-        "<$let viewTiddler=<<previewTitle>>>" +
-        "<$transclude $tiddler='$:/plugins/rimir/theme/rr-text-view-editable' $mode='block'/>" +
-        "</$let>" +
+        "<$transclude $tiddler='$:/plugins/rimir/mindmap/templates/default-preview-body' $mode='block'/>" +
         "<%endif%>" +
         "<%endif%>" +
         "<%endif%>" +

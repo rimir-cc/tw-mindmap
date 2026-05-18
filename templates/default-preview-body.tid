@@ -1,0 +1,34 @@
+title: $:/plugins/rimir/mindmap/templates/default-preview-body
+type: text/vnd.tiddlywiki
+
+\whitespace trim
+
+<!--
+   Default body-template for the mindmap preview pane. Used when the view's
+   `mm.preview-body-template` field is empty AND no `previewKind` synthetic
+   classifier is in effect. Receives `previewTitle` in scope (the backing
+   tiddler of the currently selected node).
+
+   Branches on the typed-system `note-type` field (defined by orga-data-model
+   / private-data-model as an enum with values `text` and `streams`):
+     * streams → render via the streams ViewTemplate (the bare $transclude
+                 path would render blank because stream notes keep their body
+                 empty and put content in tagged child tiddlers).
+     * anything else (or unset) → fall through to rr-text-view-editable.
+
+   Per-view overrides (set `mm.preview-body-template` on the view tiddler)
+   still take precedence. Plugin-namespace shadow means users can replace
+   this dispatcher by overriding the title.
+-->
+
+<$let noteType={{{ [<previewTitle>get[note-type]] }}}>
+<%if [<noteType>match[streams]] %>
+<$tiddler tiddler=<<previewTitle>>>
+<$transclude $tiddler="$:/plugins/sq/streams/nodes-list-template" $mode="block"/>
+</$tiddler>
+<%else%>
+<$let viewTiddler=<<previewTitle>>>
+<$transclude $tiddler="$:/plugins/rimir/theme/rr-text-view-editable" $mode="block"/>
+</$let>
+<%endif%>
+</$let>

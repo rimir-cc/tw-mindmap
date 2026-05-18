@@ -38,6 +38,10 @@ var DEFAULT_ROOT_PREFIX = "knowledge";
 // carry this tag. They are content owned by their parent node, not structural
 // nodes in the tree — exclude them from the producer's enumeration filter.
 var SLIDE_TAG = "$:/tags/rimir/mindmap/slide";
+// sq/streams child tiddlers (note bodies of type `streams`) live under
+// "<parent-note>/<timestamp>" and carry the `stream-type` field. Like slides
+// they are content of the parent note, not structural nodes — exclude.
+var EXCLUDE_FROM_TREE = "!tag[" + SLIDE_TAG + "]!has[stream-type]";
 // IDs starting with __ are synthetic roots that don't correspond to any
 // real tiddler (e.g. "__knowledge__" forest root, "__empty__", "__root__").
 function isSyntheticId(id) {
@@ -239,7 +243,7 @@ exports.produce = function (args, wiki) {
             var area = areas[i];
             if (!area.id) { continue; }
             var areaPrefix = rootPrefix + delimiter + area.id + delimiter;
-            var titles = wiki.filterTiddlers("[all[shadows+tiddlers]prefix[" + areaPrefix + "]!tag[" + SLIDE_TAG + "]]");
+            var titles = wiki.filterTiddlers("[all[shadows+tiddlers]prefix[" + areaPrefix + "]" + EXCLUDE_FROM_TREE + "]");
             var areaRoot = filterTree._buildTree(titles, {
                 delimiter: delimiter,
                 _rootPrefix: rootPrefixSegmentsBase.concat([area.id]),
@@ -310,7 +314,7 @@ exports.produce = function (args, wiki) {
         prefix = areaPrefix + delimiter;
     }
 
-    var titles = wiki.filterTiddlers("[all[shadows+tiddlers]prefix[" + prefix + "]!tag[" + SLIDE_TAG + "]]");
+    var titles = wiki.filterTiddlers("[all[shadows+tiddlers]prefix[" + prefix + "]" + EXCLUDE_FROM_TREE + "]");
 
     // For the focused-subtree case we pick a label from the focus tiddler's
     // caption (or its leaf segment if no caption). For area-level view we
@@ -452,7 +456,7 @@ exports.idForTitle = function (title) {
 // uniquify a fresh slug without colliding. Returns an Object map.
 function siblingSlugs(wiki, parentPath, excludeLeaf) {
     if (!parentPath) { return Object.create(null); }
-    var filter = "[all[shadows+tiddlers]prefix[" + parentPath + "/]" +
+    var filter = "[all[shadows+tiddlers]prefix[" + parentPath + "/]" + EXCLUDE_FROM_TREE +
         "removeprefix[" + parentPath + "/]splitbefore[/]]";
     var slugs = wiki.filterTiddlers(filter);
     var set = Object.create(null);
