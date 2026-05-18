@@ -84,6 +84,20 @@ The list of pickable fields is taken from this config tiddler, one field per lin
 
 The choice is stored in `$:/state/rimir/mindmap/<key>/label-field` (session-scoped — lost on reload). A view tiddler can set `mm.label-field` for a stable per-view default.
 
+!! Note-type dropdown (preview-pane modebar)
+
+A small dropdown sits next to the ✎ edit button in the preview pane. It writes the typed-system `note-type` field on the selected backing tiddler — `streams` flips the body render path to the `sq/streams` ViewTemplate (see `templates/default-preview-body`); anything else falls through to the standard text-body rendering. The `—` option clears the field.
+
+The list of options is taken from this config tiddler, one value per line:
+
+|!Tiddler |`$:/config/rimir/mindmap/note-type-options` |
+|!Default |`text`<br/>`streams` |
+
+''Current value:''
+<$edit-text tiddler="$:/config/rimir/mindmap/note-type-options" tag="textarea" default={{{ [[text]] +[addsuffix[\n]addsuffix[streams]] }}} placeholder="text&#10;streams"/>
+
+The dropdown is visible only when a tiddler-backed node is selected AND inspect mode is //Body// — same visibility rule as the ✎ edit button.
+
 !! Slides-only view (canvas toolbar)
 
 When the active producer supports it (`knowledge-tree` does; `capabilities.slides: true`), the canvas toolbar carries a ''Slides only'' toggle. Pressed = the tree is pruned to nodes that have at least one slide, plus any ancestor needed to keep them connected to the root. Released = the full tree returns.

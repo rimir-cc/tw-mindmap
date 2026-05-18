@@ -158,6 +158,24 @@ type: text/vnd.tiddlywiki
 .rr-mindmap-modebar-edit-btn:hover {
     opacity: 1;
 }
+.rr-mindmap-modebar-type-select {
+    flex: 0 0 auto;
+    height: 22px;
+    padding: 0 4px;
+    font-size: 0.8em;
+    line-height: 1;
+    border: 1px solid <<colour tiddler-border>>;
+    background: <<colour tiddler-background>>;
+    color: inherit;
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0.6;
+    margin-right: 0.3em;
+}
+.rr-mindmap-modebar-type-select:hover,
+.rr-mindmap-modebar-type-select:focus {
+    opacity: 1;
+}
 .rr-mindmap-preview-body {
     line-height: 1.5;
 }
@@ -171,6 +189,50 @@ type: text/vnd.tiddlywiki
 .rr-mindmap-preview-edit .tc-edit-texteditor {
     min-height: 220px;
     width: 100%;
+}
+
+/* Optional top-of-preview extension point (mm.preview-top-template).
+   Hosts e.g. the knowledge-app type pill above the body. */
+.rr-mindmap-preview-top {
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--theme-tiddler-border, #e0e0e0);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+/* Backlinks / outgoing panel below the preview body. */
+.rr-mindmap-preview-links {
+    margin-top: 16px;
+    padding-top: 10px;
+    border-top: 1px solid var(--theme-tiddler-border, #e0e0e0);
+}
+.rr-mindmap-preview-links-title {
+    font-weight: 600;
+    font-size: 0.9em;
+    margin-bottom: 6px;
+}
+.rr-mindmap-preview-links-empty {
+    color: var(--theme-muted-foreground, #888);
+    font-style: italic;
+    font-size: 0.85em;
+}
+.rr-mindmap-preview-link-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 3px 8px;
+    margin: 1px 0;
+    border: 1px solid var(--theme-tiddler-border, #e0e0e0);
+    border-radius: 4px;
+    background: var(--theme-tiddler-info-background, transparent);
+    cursor: pointer;
+    font-size: 0.9em;
+}
+.rr-mindmap-preview-link-item:hover {
+    background: rgba(0,0,0,0.05);
 }
 
 .rr-mindmap-toolbar {

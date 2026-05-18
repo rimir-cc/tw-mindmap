@@ -238,6 +238,17 @@ MindmapWidget.prototype.execute = function () {
         // Receives `previewTitle` in scope (the selected node's backing tiddler).
         // Default falls back to the standard rr-text-view-editable.
         this.previewBodyTemplate = trim(f["mm.preview-body-template"] || "");
+        // Optional extension point: tiddler transcluded ABOVE the body (in
+        // both view and edit modes). Hosts e.g. a note-type / kn.type pill
+        // chooser. Receives `previewTitle` in scope.
+        this.previewTopTemplate = trim(f["mm.preview-top-template"] || "");
+        // Backlinks / outgoing panel below the body. Defaults to TW-core
+        // `backlinks[]` / `links[]`; override to e.g. `ns-backlinks[]` /
+        // `ns-forwardlinks[]` (rimir/namespace) when smarter resolution is
+        // available. Set `mm.preview-backlinks` to "no" to disable entirely.
+        this.previewBacklinksFilter = trim(f["mm.backlinks-filter"] || "") || "[<previewTitle>backlinks[]]";
+        this.previewOutgoingFilter = trim(f["mm.outgoing-filter"] || "") || "[<previewTitle>links[]]";
+        this.previewBacklinksEnabled = trim(f["mm.preview-backlinks"] || "") !== "no";
         try {
             this.producerArgs = f["mm.args"] ? JSON.parse(f["mm.args"]) : {};
         } catch (e) {
@@ -713,6 +724,20 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
     });
     this.modebarRow.appendChild(this.modebarEditBtn);
 
+    // Note-type dropdown — writes the typed-system `note-type` field on the
+    // selected backing tiddler. Drives the default-preview-body template's
+    // streams-vs-text branch. Options come from NOTE_TYPE_OPTIONS below; the
+    // empty-string option clears the field (renders as default text-body).
+    this.modebarTypeSelect = this.document.createElement("select");
+    this.modebarTypeSelect.className = "rr-mindmap-modebar-type-select";
+    this.modebarTypeSelect.title = "Note type";
+    this.modebarTypeSelect.style.display = "none";
+    var selfType = this;
+    this.modebarTypeSelect.addEventListener("change", function () {
+        selfType.handleModebarTypeChange(selfType.modebarTypeSelect.value);
+    });
+    this.modebarRow.appendChild(this.modebarTypeSelect);
+
     this.modebarSelect = this.document.createElement("select");
     this.modebarSelect.className = "rr-mindmap-modebar-select";
     var self = this;
@@ -748,6 +773,7 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
 
     this.updateModebarTitle();
     this.populateModebarSelect();
+    this.populateModebarTypeSelect();
 
     // Wikitext below the modebar branches on inspect-mode. Two signals
     // determine what the pane renders in non-presentation modes:
@@ -772,6 +798,12 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
         "<%else%>" +
         "<$let editState=<<__editstate__>>>" +
         "<div class='rr-mindmap-preview-body'>" +
+        // Top extension point — visible in both view and edit modes.
+        "<%if [<__toptemplate__>!is[blank]] %>" +
+        "<div class='rr-mindmap-preview-top'>" +
+        "<$transclude $tiddler=<<__toptemplate__>> $mode='block'/>" +
+        "</div>" +
+        "<%endif%>" +
         "<%if [<editState>get[text]match[yes]] %>" +
         "<$keyboard key='ctrl-Return' actions=\"<$action-setfield $tiddler=<<editState>> text=''/>\">" +
         "<$keyboard key='escape' actions=\"<$action-setfield $tiddler=<<editState>> text=''/>\">" +
@@ -781,6 +813,17 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
         "</$keyboard>" +
         "</$keyboard>" +
         "<%else%>" +
+        // Shadow `editState` to empty for the body-view branch so the
+        // rimir/theme `rr-text-editor-leave-edit` EditorToolbar item's
+        // condition `[<editState>!is[blank]]` fails inside any nested
+        // editor (notably sq/streams' row-edit textarea). Otherwise that
+        // toolbar item registers a `data-tw-keyboard-shortcut="ctrl+Enter"`
+        // which the framed-engine binds via preventDefault + stopPropagation
+        // before streams' own `<$keyboard-plus>` save-and-exit handler can
+        // fire — symptom: ctrl-Enter in a streams row-edit does nothing.
+        // Same race would hit any other ctrl+Enter-bound EditorToolbar item
+        // that uses `<editState>` as a gate.
+        "<$let editState=\"\">" +
         "<%if [<__bodytemplate__>!is[blank]] %>" +
         "<$transclude $tiddler=<<__bodytemplate__>> $mode='block'/>" +
         "<%else%>" +
@@ -790,6 +833,32 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
         "<$transclude $tiddler='$:/plugins/rimir/mindmap/templates/default-preview-body' $mode='block'/>" +
         "<%endif%>" +
         "<%endif%>" +
+        // Backlinks / outgoing panel — view mode only. Filters expand
+        // <previewTitle> at render time. Suppressed when synthetic kind is
+        // active (no backing tiddler) or when explicitly disabled via field.
+        "<%if [<__showbacklinks__>match[yes]] %>" +
+        "<$list filter='[<previewTitle>!is[blank]is[tiddler]]' variable='_'>" +
+        "<div class='rr-mindmap-preview-links'>" +
+        "<div class='rr-mindmap-preview-links-title'>↩ Backlinks (<$count filter=<<__backlinksfilter__>>/>)</div>" +
+        "<$list filter=<<__backlinksfilter__>> variable='__lk__' " +
+        "emptyMessage=\"\"\"<div class='rr-mindmap-preview-links-empty'>None.</div>\"\"\">" +
+        "<$button class='rr-mindmap-preview-link-item' message='rr-mindmap-select-node-by-title' param=<<__lk__>>>" +
+        "<$text text={{{ [<__lk__>get[caption]!is[blank]] ~[<__lk__>split[/]last[1]] ~[<__lk__>] }}}/>" +
+        "</$button>" +
+        "</$list>" +
+        "</div>" +
+        "<div class='rr-mindmap-preview-links'>" +
+        "<div class='rr-mindmap-preview-links-title'>→ Outgoing (<$count filter=<<__outgoingfilter__>>/>)</div>" +
+        "<$list filter=<<__outgoingfilter__>> variable='__lk__' " +
+        "emptyMessage=\"\"\"<div class='rr-mindmap-preview-links-empty'>None.</div>\"\"\">" +
+        "<$button class='rr-mindmap-preview-link-item' message='rr-mindmap-select-node-by-title' param=<<__lk__>>>" +
+        "<$text text={{{ [<__lk__>get[caption]!is[blank]] ~[<__lk__>split[/]last[1]] ~[<__lk__>] }}}/>" +
+        "</$button>" +
+        "</$list>" +
+        "</div>" +
+        "</$list>" +
+        "<%endif%>" +
+        "</$let>" +
         "<%endif%>" +
         "</div>" +
         "</$let>" +
@@ -813,7 +882,11 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
             __kindstate__: this.previewKindStateTitle(),
             __statekey__: this.previewStateKey(),
             __viewtitle__: this.viewAttr || "",
-            __bodytemplate__: this.previewBodyTemplate || ""
+            __bodytemplate__: this.previewBodyTemplate || "",
+            __toptemplate__: this.previewTopTemplate || "",
+            __backlinksfilter__: this.previewBacklinksFilter,
+            __outgoingfilter__: this.previewOutgoingFilter,
+            __showbacklinks__: this.previewBacklinksEnabled ? "yes" : "no"
         }
     });
     widgetNode.render(this.previewContent, null);
@@ -905,6 +978,71 @@ MindmapWidget.prototype.populateModebarSelect = function () {
     }
 
     this.updateModebarSelectedValue();
+};
+
+// Populate the note-type dropdown from the user-overridable config tiddler.
+// Default fallback is "text\nstreams" — mirrors the typed-system enum at
+// $:/plugins/rimir/orga-data-model/typed/enums/note-type. An empty-value
+// option at the top clears the field on the selected tiddler. Called once at
+// init; the option set is stable across selections (only the current value
+// changes — see updateModebarTypeSelect).
+MindmapWidget.prototype.populateModebarTypeSelect = function () {
+    if (!this.modebarTypeSelect) { return; }
+    while (this.modebarTypeSelect.firstChild) {
+        this.modebarTypeSelect.removeChild(this.modebarTypeSelect.firstChild);
+    }
+    var clearOpt = this.document.createElement("option");
+    clearOpt.value = "";
+    clearOpt.textContent = "—";
+    this.modebarTypeSelect.appendChild(clearOpt);
+    var raw = this.wiki.getTiddlerText("$:/config/rimir/mindmap/note-type-options", "text\nstreams");
+    var lines = raw.split("\n");
+    for (var i = 0; i < lines.length; i++) {
+        var value = trim(lines[i]);
+        if (!value) { continue; }
+        var opt = this.document.createElement("option");
+        opt.value = value;
+        opt.textContent = value;
+        this.modebarTypeSelect.appendChild(opt);
+    }
+    this.updateModebarTypeSelect();
+};
+
+// Sync the note-type dropdown's visibility + current value. Visible only when
+// (a) a tiddler-backed node is selected AND (b) inspect mode is "body" —
+// matches the ✎ edit button's visibility rule because the type only affects
+// the body rendering. Selected value reflects the tiddler's current
+// `note-type` field; "" when the field is absent or empty.
+MindmapWidget.prototype.updateModebarTypeSelect = function () {
+    if (!this.modebarTypeSelect) { return; }
+    var backing = this.selectedBackingTitle();
+    var show = !!backing &&
+        this.currentInspectMode &&
+        this.currentInspectMode() === "body";
+    this.modebarTypeSelect.style.display = show ? "" : "none";
+    if (!show) { return; }
+    var tid = this.wiki.getTiddler(backing);
+    var current = trim((tid && tid.fields["note-type"]) || "");
+    // Fall back to "" (the clear option) when the current value isn't in the
+    // option set so the dropdown doesn't show a stale value silently.
+    var found = false;
+    for (var i = 0; i < this.modebarTypeSelect.options.length; i++) {
+        if (this.modebarTypeSelect.options[i].value === current) { found = true; break; }
+    }
+    this.modebarTypeSelect.value = found ? current : "";
+};
+
+// Write the chosen note-type value to the selected backing tiddler. Empty
+// string clears the field. Use wiki.setText with `undefined` to fully delete
+// the field so .tid roundtrips don't leave a stray "note-type:" line.
+MindmapWidget.prototype.handleModebarTypeChange = function (value) {
+    var backing = this.selectedBackingTitle();
+    if (!backing) { return; }
+    if (value) {
+        this.wiki.setText(backing, "note-type", null, value);
+    } else {
+        this.wiki.setText(backing, "note-type", null, undefined);
+    }
 };
 
 // Compute and apply the dropdown's selected value from the inspect-mode
@@ -1427,6 +1565,18 @@ MindmapWidget.prototype.refresh = function (changedTiddlers) {
         if (pendingTarget) {
             try { this.wiki.deleteTiddler(openTabState); } catch (e) {}
             this.openInNewTab(pendingTarget);
+        }
+    }
+    // Note-type dropdown reactivity. Two triggers: (a) external change to
+    // the selected backing tiddler's `note-type` field (field-bar edit,
+    // rr-text-editor metadata view, etc.); (b) change to the options config
+    // tiddler so the dropdown picks up newly-added types without a restart.
+    if (changedTiddlers["$:/config/rimir/mindmap/note-type-options"]) {
+        this.populateModebarTypeSelect();
+    } else {
+        var selectedBacking = this.selectedBackingTitle && this.selectedBackingTitle();
+        if (selectedBacking && changedTiddlers[selectedBacking]) {
+            this.updateModebarTypeSelect();
         }
     }
     var baseChanged = false;
@@ -2290,7 +2440,7 @@ MindmapWidget.prototype.selectByTitle = function (title) {
 // from the presentation pane. Bare passthrough to selectByTitle — does NOT
 // touch the breadcrumb (presentation-click is a separate UX from link-click).
 MindmapWidget.prototype.handleSelectNodeByTitle = function (event) {
-    var title = event && event.paramObject && event.paramObject.title;
+    var title = event && (event.param || (event.paramObject && event.paramObject.title));
     if (!title) { return; }
     this.selectByTitle(title);
 };
@@ -2530,6 +2680,7 @@ MindmapWidget.prototype.updateModebarEditButton = function () {
         this.currentInspectMode &&
         this.currentInspectMode() === "body";
     this.modebarEditBtn.style.display = show ? "" : "none";
+    this.updateModebarTypeSelect();
 };
 
 // Flip the preview pane into edit mode for the currently-selected node.

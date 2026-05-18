@@ -38,10 +38,32 @@ var DEFAULT_ROOT_PREFIX = "knowledge";
 // carry this tag. They are content owned by their parent node, not structural
 // nodes in the tree — exclude them from the producer's enumeration filter.
 var SLIDE_TAG = "$:/tags/rimir/mindmap/slide";
-// sq/streams child tiddlers (note bodies of type `streams`) live under
-// "<parent-note>/<timestamp>" and carry the `stream-type` field. Like slides
-// they are content of the parent note, not structural nodes — exclude.
-var EXCLUDE_FROM_TREE = "!tag[" + SLIDE_TAG + "]!has[stream-type]";
+// EXCLUDE_FROM_TREE — inline single-run ops, chainable inside the main run.
+// Currently just the slide-tag exclusion; stream-child exclusion needs a
+// separate `:filter` run (see streamKidExclusionFilter below).
+var EXCLUDE_FROM_TREE = "!tag[" + SLIDE_TAG + "]";
+
+// sq/streams child tiddlers extend their parent's title with "/<timestamp>",
+// so the producer's prefix-walk would otherwise expose them as descendant
+// nodes. They're content of the parent note, not structural nodes.
+//
+// Field-based heuristics (`!has[stream-type]` or "keep if has stream-list")
+// fail for nested streams: a child that itself carries stream-children gets
+// `stream-list` AND `stream-type`, indistinguishable from a top-level root
+// by fields alone. The sq/streams plugin exposes a `get-stream-root[]`
+// filter operator that walks up via the `parent` field until it hits the
+// outermost stream-tiddler (or returns the tiddler itself when it isn't a
+// stream child). Matching the result against `<currentTiddler>` keeps only
+// roots and non-stream tiddlers; every depth of stream child is dropped.
+//
+// Returns a `:filter` run string (with leading space) ready to concatenate
+// onto a filter expression. When the streams plugin isn't installed the
+// operator wouldn't exist and a bare `:filter[get-stream-root[]match...]`
+// would silently drop every input — so fall back to no extra filtering.
+function streamKidExclusionFilter(wiki) {
+    if (!wiki.getTiddler("$:/plugins/sq/streams")) { return ""; }
+    return " :filter[get-stream-root[]match<currentTiddler>]";
+}
 // IDs starting with __ are synthetic roots that don't correspond to any
 // real tiddler (e.g. "__knowledge__" forest root, "__empty__", "__root__").
 function isSyntheticId(id) {
@@ -148,6 +170,50 @@ function enrich(node, opts) {
     for (var i = 0; i < children.length; i++) { enrich(children[i], childOpts); }
 }
 
+// Mark nodes at depth > maxVisibleDepth with core:collapsed=true in the BASE
+// MDOM. The overlay's setAttr ops apply AFTER the base, so any user expansion
+// recorded in the overlay (core:collapsed=false) overrides this default on
+// subsequent renders. Result: nodes start collapsed on first render but stay
+// expanded across reloads once the user opens them.
+//
+// The root itself is depth 0 and never collapsed; otherwise the engine has
+// nothing to render.
+function markCollapsedBelowDepth(node, depth, maxVisibleDepth) {
+    if (!node) { return; }
+    if (depth > maxVisibleDepth) {
+        node.attrs = node.attrs || {};
+        node.attrs["core:collapsed"] = true;
+    }
+    var children = node.children || [];
+    for (var i = 0; i < children.length; i++) {
+        markCollapsedBelowDepth(children[i], depth + 1, maxVisibleDepth);
+    }
+}
+
+// Ancestor-preserving prune by a TW filter expression. Resolves the filter
+// against the wiki to get a set of matching tiddler titles, then walks the
+// tree bottom-up keeping a node iff (its core:tiddler is in the match set)
+// OR (any of its descendants is kept). Synthetic / structural nodes without
+// a core:tiddler survive only if a descendant matches — meaning empty
+// branches collapse away cleanly.
+//
+// The root is ALWAYS preserved so the engine has something to render even
+// when no node matches.
+function pruneByNodeFilter(node, keepSet) {
+    if (!node) { return false; }
+    var children = node.children || [];
+    var keptChildren = [];
+    for (var i = 0; i < children.length; i++) {
+        if (pruneByNodeFilter(children[i], keepSet)) {
+            keptChildren.push(children[i]);
+        }
+    }
+    node.children = keptChildren;
+    var sourceTitle = node.attrs && node.attrs["core:tiddler"];
+    var selfMatches = sourceTitle && keepSet[sourceTitle];
+    return !!(selfMatches || keptChildren.length > 0);
+}
+
 // Slides-only pruning: walk the tree bottom-up; keep a node iff it has slides
 // of its own OR any of its descendants (after pruning) is kept. Synthetic
 // nodes never have slides directly — they only survive if a descendant does.
@@ -185,6 +251,27 @@ function pruneToSlideBearing(node, wiki) {
 //     `mm:label-status = "undefined"`, and stash the would-have-been leaf
 //     segment on `mm:label-fallback-title` so engines can show the title
 //     as a small secondary line.
+// Apply the post-build args (node-filter and collapse-below-depth) to the
+// produced root. Order matters: filter first (prunes branches), then collapse
+// marks remaining depth. Both are no-ops when their args are blank.
+function applyPostBuildArgs(root, args, wiki) {
+    if (!root || !args) { return; }
+    var filterStr = trim(args["node-filter"] || "");
+    if (filterStr) {
+        var titles = wiki.filterTiddlers(filterStr);
+        var keepSet = Object.create(null);
+        for (var i = 0; i < titles.length; i++) { keepSet[titles[i]] = true; }
+        pruneByNodeFilter(root, keepSet);
+    }
+    var depthStr = trim(args["collapse-below-depth"] || "");
+    if (depthStr) {
+        var maxDepth = parseInt(depthStr, 10);
+        if (!isNaN(maxDepth) && maxDepth >= 0) {
+            markCollapsedBelowDepth(root, 0, maxDepth);
+        }
+    }
+}
+
 function relabelTree(node, labelField, wiki) {
     if (!node) { return; }
     var sourceTitle = node.attrs && node.attrs["core:tiddler"];
@@ -222,7 +309,10 @@ exports.describe = function () {
             { key: "root-prefix", default: DEFAULT_ROOT_PREFIX, description: "Title-path root above the area id. Default 'knowledge'. Set to e.g. 'private/knowledge' to host trees under a different namespace; multi-segment values are split on `delimiter`." },
             { key: "include-areas-root", default: "no", description: "If 'yes', render a forest of all areas. The `area` arg is ignored." },
             { key: "label-field", default: "title", description: "Tiddler field used as the visible node label. 'title' (default) uses the leaf path-segment; 'caption' (or any other field) decouples display from the structural identity — rename only edits the chosen field, title is preserved." },
-            { key: "slides-only", default: "no", description: "If 'yes', the tree is pruned to nodes that have at least one slide OR have a descendant with slides — i.e. the presentation-eligible spine of the area. Composes with focus mode (re-rooting happens first, then pruning)." }
+            { key: "slides-only", default: "no", description: "If 'yes', the tree is pruned to nodes that have at least one slide OR have a descendant with slides — i.e. the presentation-eligible spine of the area. Composes with focus mode (re-rooting happens first, then pruning)." },
+            { key: "collapse-below-depth", default: "", description: "If set to a non-negative integer N, every node at depth > N starts collapsed (BASE MDOM core:collapsed=true). Overlay setAttr ops override on user expansion, so the collapse only acts as an initial default. Forest mode: depth 0 is the synthetic forest root, depth 1 is each area root, depth 2+ are area children." },
+            { key: "node-filter", default: "", description: "Optional TW filter expression narrowing the tree to nodes whose backing tiddler matches, with ancestor preservation (a node survives if it matches OR any descendant matches). Empty value disables filtering." },
+            { key: "node-filter-watch", default: "", description: "Optional TW filter expression listing extra tiddler titles whose changes should trigger reproduce — used to make filter chip / search-input state changes refresh the mindmap even when those tiddlers are outside the normal refresh set." }
         ]
     };
 };
@@ -243,7 +333,7 @@ exports.produce = function (args, wiki) {
             var area = areas[i];
             if (!area.id) { continue; }
             var areaPrefix = rootPrefix + delimiter + area.id + delimiter;
-            var titles = wiki.filterTiddlers("[all[shadows+tiddlers]prefix[" + areaPrefix + "]" + EXCLUDE_FROM_TREE + "]");
+            var titles = wiki.filterTiddlers("[all[shadows+tiddlers]prefix[" + areaPrefix + "]" + EXCLUDE_FROM_TREE + "]" + streamKidExclusionFilter(wiki));
             var areaRoot = filterTree._buildTree(titles, {
                 delimiter: delimiter,
                 _rootPrefix: rootPrefixSegmentsBase.concat([area.id]),
@@ -279,6 +369,7 @@ exports.produce = function (args, wiki) {
             forestRoot.children = keptAreas;
             forestRoot.attrs["mm:slides-only"] = true;
         }
+        applyPostBuildArgs(forestRoot, args, wiki);
         return {
             version: 1,
             root: forestRoot,
@@ -314,7 +405,7 @@ exports.produce = function (args, wiki) {
         prefix = areaPrefix + delimiter;
     }
 
-    var titles = wiki.filterTiddlers("[all[shadows+tiddlers]prefix[" + prefix + "]" + EXCLUDE_FROM_TREE + "]");
+    var titles = wiki.filterTiddlers("[all[shadows+tiddlers]prefix[" + prefix + "]" + EXCLUDE_FROM_TREE + "]" + streamKidExclusionFilter(wiki));
 
     // For the focused-subtree case we pick a label from the focus tiddler's
     // caption (or its leaf segment if no caption). For area-level view we
@@ -364,6 +455,7 @@ exports.produce = function (args, wiki) {
         root.attrs = root.attrs || {};
         root.attrs["mm:slides-only"] = true;
     }
+    applyPostBuildArgs(root, args, wiki);
 
     return {
         version: 1,
@@ -456,8 +548,9 @@ exports.idForTitle = function (title) {
 // uniquify a fresh slug without colliding. Returns an Object map.
 function siblingSlugs(wiki, parentPath, excludeLeaf) {
     if (!parentPath) { return Object.create(null); }
-    var filter = "[all[shadows+tiddlers]prefix[" + parentPath + "/]" + EXCLUDE_FROM_TREE +
-        "removeprefix[" + parentPath + "/]splitbefore[/]]";
+    var filter = "[all[shadows+tiddlers]prefix[" + parentPath + "/]" + EXCLUDE_FROM_TREE + "]" +
+        streamKidExclusionFilter(wiki) +
+        " +[removeprefix[" + parentPath + "/]splitbefore[/]]";
     var slugs = wiki.filterTiddlers(filter);
     var set = Object.create(null);
     for (var i = 0; i < slugs.length; i++) {
@@ -638,20 +731,25 @@ exports.refreshFilter = function (args) {
     var delimiter = args.delimiter || "/";
     var areaTag = trim(args["area-tag"] || "") || DEFAULT_AREA_TAG;
     var rootPrefix = trim(args["root-prefix"] || "") || DEFAULT_ROOT_PREFIX;
+    // node-filter-watch lets callers append state-tiddler dependencies for
+    // filter chip / search-input UIs whose changes should trigger reproduce.
+    // Passed as a TW filter expression evaluating to watched titles.
+    var extraWatch = trim(args["node-filter-watch"] || "");
+    var extra = extraWatch ? " " + extraWatch : "";
     if (args["include-areas-root"] === "yes" || args["include-areas-root"] === true) {
         // Any tiddler under <rootPrefix>/<area>/ AND area-tagged tiddlers.
         // Slide tiddlers excluded — they don't affect tree shape, only the
         // owner's mm.slide-order field (which lives ON the owner and is
         // already covered). Watching them would trigger wasteful reproduces
         // on every slide-body keystroke.
-        return "[all[shadows+tiddlers]prefix[" + rootPrefix + delimiter + "]!tag[" + SLIDE_TAG + "]] [all[shadows+tiddlers]tag[" + areaTag + "]] [[" + TYPES_TIDDLER + "]]";
+        return "[all[shadows+tiddlers]prefix[" + rootPrefix + delimiter + "]!tag[" + SLIDE_TAG + "]] [all[shadows+tiddlers]tag[" + areaTag + "]] [[" + TYPES_TIDDLER + "]]" + extra;
     }
     var areaId = trim(args.area || "");
     if (!areaId) { return null; }
     var areaPrefix = rootPrefix + delimiter + areaId;
     var focusTitle = trim(args["focus-title"] || "");
     if (focusTitle && (focusTitle === areaPrefix || focusTitle.indexOf(areaPrefix + delimiter) === 0)) {
-        return "[all[shadows+tiddlers]prefix[" + focusTitle + delimiter + "]!tag[" + SLIDE_TAG + "]] [[" + focusTitle + "]] [[" + TYPES_TIDDLER + "]]";
+        return "[all[shadows+tiddlers]prefix[" + focusTitle + delimiter + "]!tag[" + SLIDE_TAG + "]] [[" + focusTitle + "]] [[" + TYPES_TIDDLER + "]]" + extra;
     }
-    return "[all[shadows+tiddlers]prefix[" + areaPrefix + delimiter + "]!tag[" + SLIDE_TAG + "]] [[" + TYPES_TIDDLER + "]]";
+    return "[all[shadows+tiddlers]prefix[" + areaPrefix + delimiter + "]!tag[" + SLIDE_TAG + "]] [[" + TYPES_TIDDLER + "]]" + extra;
 };
