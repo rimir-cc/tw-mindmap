@@ -67,11 +67,31 @@ type: text/vnd.tiddlywiki
     flex: 0 0 35%;
     max-width: 35%;
     height: 100%;
-    overflow: auto;
-    padding: 12px 16px;
+    /* Flex column: modebar + top-host (non-scrolling) above content (scrolls).
+       Pane uses overflow:visible (not hidden) so reveal popups originating
+       in the host-app top template can extend below the visible preview
+       area — they're clamped instead by `.rr-mindmap-canvas-area` (or the
+       widget's own container) further up the tree, giving the popup the
+       full mindmap-pane height to work with. The body content has its own
+       overflow:auto on `.rr-mindmap-preview-content`. */
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
     border-left: 1px solid var(--theme-tiddler-border, #e0e0e0);
     background: var(--theme-tiddler-background, transparent);
     font-size: 0.95em;
+}
+.rr-mindmap-preview-top-host {
+    flex: 0 0 auto;
+    overflow: visible;
+    padding: 0 16px;
+}
+.rr-mindmap-preview-top-host:empty { padding: 0; }
+.rr-mindmap-preview-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: 0 16px 12px;
 }
 .rr-mindmap-preview-header {
     font-family: var(--theme-monospace-font, monospace);
@@ -89,9 +109,9 @@ type: text/vnd.tiddlywiki
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding-bottom: 8px;
-    margin-bottom: 10px;
+    padding: 12px 16px 8px;
     border-bottom: 1px solid <<colour tiddler-border>>;
+    flex: 0 0 auto;
 }
 .rr-mindmap-preview-modebar-row {
     display: flex;
@@ -192,15 +212,24 @@ type: text/vnd.tiddlywiki
 }
 
 /* Optional top-of-preview extension point (mm.preview-top-template).
-   Hosts e.g. the knowledge-app type pill above the body. */
+   Hosts e.g. the knowledge-app type pill above the body. Lives in
+   `.rr-mindmap-preview-top-host` (non-scrolling) so its reveal popups
+   can escape the scrolling content area without being clipped.
+   Inline-mode transclude in the widget tree avoids <p> auto-wrap, so
+   the pill sits flush against the modebar above and body below. */
 .rr-mindmap-preview-top {
-    margin-bottom: 10px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--theme-tiddler-border, #e0e0e0);
+    padding: 4px 0;
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     align-items: center;
+    line-height: 1;
+}
+.rr-mindmap-preview-top p,
+.rr-mindmap-preview-top-host p {
+    margin: 0;
+    padding: 0;
+    display: inline;
 }
 
 /* Backlinks / outgoing panel below the preview body. */

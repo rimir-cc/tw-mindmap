@@ -766,6 +766,16 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
     // changes to the state tiddler refresh naturally without a JS rebuild.
     this.renderBreadcrumbWidget();
 
+    // Top extension host (non-scrolling, between modebar and content). Lives
+    // OUTSIDE the scrolling content container so popups originating here
+    // (e.g. knowledge-app's kn-type-pill) aren't clipped by overflow:auto.
+    // Empty container by default; widget tree mounts only when the view sets
+    // mm.preview-top-template.
+    this.previewTopHost = this.document.createElement("div");
+    this.previewTopHost.className = "rr-mindmap-preview-top-host";
+    this.previewPane.appendChild(this.previewTopHost);
+    this.renderPreviewTopWidget();
+
     // Content container — wikitext widget tree renders here.
     this.previewContent = this.document.createElement("div");
     this.previewContent.className = "rr-mindmap-preview-content";
@@ -798,12 +808,6 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
         "<%else%>" +
         "<$let editState=<<__editstate__>>>" +
         "<div class='rr-mindmap-preview-body'>" +
-        // Top extension point — visible in both view and edit modes.
-        "<%if [<__toptemplate__>!is[blank]] %>" +
-        "<div class='rr-mindmap-preview-top'>" +
-        "<$transclude $tiddler=<<__toptemplate__>> $mode='block'/>" +
-        "</div>" +
-        "<%endif%>" +
         "<%if [<editState>get[text]match[yes]] %>" +
         "<$keyboard key='ctrl-Return' actions=\"<$action-setfield $tiddler=<<editState>> text=''/>\">" +
         "<$keyboard key='escape' actions=\"<$action-setfield $tiddler=<<editState>> text=''/>\">" +
@@ -883,7 +887,6 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
             __statekey__: this.previewStateKey(),
             __viewtitle__: this.viewAttr || "",
             __bodytemplate__: this.previewBodyTemplate || "",
-            __toptemplate__: this.previewTopTemplate || "",
             __backlinksfilter__: this.previewBacklinksFilter,
             __outgoingfilter__: this.previewOutgoingFilter,
             __showbacklinks__: this.previewBacklinksEnabled ? "yes" : "no"
@@ -891,6 +894,42 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
     });
     widgetNode.render(this.previewContent, null);
     this.previewWidget = widgetNode;
+};
+
+// Mount the preview-top extension template into its own widget tree on
+// previewTopHost (outside the scrolling content container). Provides
+// `previewTitle` in scope and gates rendering on a non-blank selection
+// pointing at a real tiddler — so synthetic-node selections don't trigger
+// host-app templates that assume a backing tiddler. No-op when the view
+// tiddler doesn't set `mm.preview-top-template`.
+MindmapWidget.prototype.renderPreviewTopWidget = function () {
+    if (!this.previewTopHost) { return; }
+    if (!this.previewTopTemplate) { return; }
+    // Inline-mode transclude: the host-app templates here ship inline content
+    // (pills, buttons) and the block-mode default would auto-wrap them in
+    // <p> tags with default browser margins (visible 16px above + below).
+    // Inline mode keeps the content flush. Templates that genuinely need
+    // block content can wrap themselves in a <div>.
+    var wikitext =
+        "<$set name='previewTitle' filter='[<__state__>get[text]]'>" +
+        "<$list filter='[<previewTitle>!is[blank]is[tiddler]]' variable='_'>" +
+        "<div class='rr-mindmap-preview-top'>" +
+        "<$transclude $tiddler=<<__toptemplate__>> $mode='inline'/>" +
+        "</div>" +
+        "</$list>" +
+        "</$set>";
+    var parser = this.wiki.parseText("text/vnd.tiddlywiki", wikitext, { parseAsInline: false });
+    if (!parser) { return; }
+    var widgetNode = this.wiki.makeWidget(parser, {
+        parentWidget: this,
+        document: this.document,
+        variables: {
+            __state__: this.previewStateTitle(),
+            __toptemplate__: this.previewTopTemplate
+        }
+    });
+    widgetNode.render(this.previewTopHost, null);
+    this.previewTopWidget = widgetNode;
 };
 
 // Mount a small wikitext widget tree into modebarBreadcrumb that renders the
@@ -991,11 +1030,7 @@ MindmapWidget.prototype.populateModebarTypeSelect = function () {
     while (this.modebarTypeSelect.firstChild) {
         this.modebarTypeSelect.removeChild(this.modebarTypeSelect.firstChild);
     }
-    var clearOpt = this.document.createElement("option");
-    clearOpt.value = "";
-    clearOpt.textContent = "—";
-    this.modebarTypeSelect.appendChild(clearOpt);
-    var raw = this.wiki.getTiddlerText("$:/config/rimir/mindmap/note-type-options", "text\nstreams");
+    var raw = this.wiki.getTiddlerText("$:/config/rimir/mindmap/note-type-options", "tw-text\nmd-text\nstreams");
     var lines = raw.split("\n");
     for (var i = 0; i < lines.length; i++) {
         var value = trim(lines[i]);
@@ -1006,6 +1041,16 @@ MindmapWidget.prototype.populateModebarTypeSelect = function () {
         this.modebarTypeSelect.appendChild(opt);
     }
     this.updateModebarTypeSelect();
+};
+
+// Map from note-type values to the tiddler `type` field that drives the
+// standard transclude path's parser choice. Exported only as a constant in
+// closure scope — extend here when adding new note-type variants.
+var NOTE_TYPE_TIDDLER_TYPE = {
+    "tw-text": "",                  // wikitext (TW default; empty type field)
+    "md-text": "text/x-markdown",   // markdown parser
+    "streams": "",                  // body unused; streams template reads children
+    "text": ""                      // legacy alias for tw-text (pre-renaming)
 };
 
 // Sync the note-type dropdown's visibility + current value. Visible only when
@@ -1023,13 +1068,20 @@ MindmapWidget.prototype.updateModebarTypeSelect = function () {
     if (!show) { return; }
     var tid = this.wiki.getTiddler(backing);
     var current = trim((tid && tid.fields["note-type"]) || "");
-    // Fall back to "" (the clear option) when the current value isn't in the
-    // option set so the dropdown doesn't show a stale value silently.
+    // Treat legacy `text` (pre-rename) as the visible `tw-text` option so
+    // existing notes don't surface a stale value.
+    var displayValue = current === "text" ? "tw-text" : current;
     var found = false;
     for (var i = 0; i < this.modebarTypeSelect.options.length; i++) {
-        if (this.modebarTypeSelect.options[i].value === current) { found = true; break; }
+        if (this.modebarTypeSelect.options[i].value === displayValue) { found = true; break; }
     }
-    this.modebarTypeSelect.value = found ? current : "";
+    // No empty "—" option any more — fall back to the first option (tw-text
+    // by default config) when the current note-type isn't recognised.
+    if (found) {
+        this.modebarTypeSelect.value = displayValue;
+    } else if (this.modebarTypeSelect.options.length > 0) {
+        this.modebarTypeSelect.selectedIndex = 0;
+    }
 };
 
 // Write the chosen note-type value to the selected backing tiddler. Empty
@@ -1042,6 +1094,19 @@ MindmapWidget.prototype.handleModebarTypeChange = function (value) {
         this.wiki.setText(backing, "note-type", null, value);
     } else {
         this.wiki.setText(backing, "note-type", null, undefined);
+    }
+    // Synchronise the `type` field with the chosen note-type so the standard
+    // <$transclude> path in `default-preview-body` (and EditTemplate, and
+    // filesystem-watcher) picks the right parser / file extension. Unknown
+    // / custom note-types are left alone so users can opt out by writing
+    // their own mapping.
+    if (Object.prototype.hasOwnProperty.call(NOTE_TYPE_TIDDLER_TYPE, value)) {
+        var tiddlerType = NOTE_TYPE_TIDDLER_TYPE[value];
+        if (tiddlerType) {
+            this.wiki.setText(backing, "type", null, tiddlerType);
+        } else {
+            this.wiki.setText(backing, "type", null, undefined);
+        }
     }
 };
 
@@ -1502,6 +1567,9 @@ MindmapWidget.prototype.reproduce = function () {
 MindmapWidget.prototype.forwardPreviewRefresh = function (changedTiddlers) {
     if (this.previewWidget) {
         try { this.previewWidget.refresh(changedTiddlers); } catch (e) { /* ignore */ }
+    }
+    if (this.previewTopWidget) {
+        try { this.previewTopWidget.refresh(changedTiddlers); } catch (e) { /* ignore */ }
     }
     if (this.breadcrumbWidget) {
         try { this.breadcrumbWidget.refresh(changedTiddlers); } catch (e) { /* ignore */ }

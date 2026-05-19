@@ -9,12 +9,20 @@ type: text/vnd.tiddlywiki
    classifier is in effect. Receives `previewTitle` in scope (the backing
    tiddler of the currently selected node).
 
-   Branches on the typed-system `note-type` field (defined by orga-data-model
-   / private-data-model as an enum with values `text` and `streams`):
-     * streams → render via the streams ViewTemplate (the bare $transclude
-                 path would render blank because stream notes keep their body
-                 empty and put content in tagged child tiddlers).
-     * anything else (or unset) → fall through to rr-text-view-editable.
+   Branches on the typed-system `note-type` field of the selected tiddler:
+     * streams              → render via the streams ViewTemplate (the bare
+                              $transclude path renders blank because stream
+                              notes keep their body empty and put content in
+                              tagged child tiddlers).
+     * md-text              → falls through to rr-text-view-editable. The
+                              host's note-type-change handler also stamps
+                              `type: text/x-markdown` on the tiddler so the
+                              inner $transclude picks the markdown parser
+                              (rimir/frontmatter handles the YAML round-trip
+                              when the tiddler is saved as a .md file).
+     * tw-text / text / ""  → falls through to rr-text-view-editable too.
+                              Same code path as md-text — the tiddler's
+                              `type` field chooses the parser.
 
    Per-view overrides (set `mm.preview-body-template` on the view tiddler)
    still take precedence. Plugin-namespace shadow means users can replace
