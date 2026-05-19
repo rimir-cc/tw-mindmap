@@ -1,0 +1,16 @@
+title: $:/plugins/rimir/mindmap/streams-extras/styles
+tags: $:/tags/Stylesheet
+type: text/css
+
+/* Disabled-style row used by the Paste sub-menu when nothing has been
+   copied into the structure clipboard yet — same metrics as a normal
+   menu item but muted and non-interactive. */
+.sq-contextmenu .tc-menu-list-item.rr-streams-disabled,
+.sq-contextmenu div.rr-streams-disabled {
+    color: #b7bcbf;
+    cursor: default;
+    padding: 0 18px;
+    line-height: 24px;
+    white-space: nowrap;
+    pointer-events: none;
+}

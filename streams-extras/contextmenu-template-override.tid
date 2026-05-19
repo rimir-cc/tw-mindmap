@@ -1,0 +1,102 @@
+title: $:/plugins/sq/streams/contextmenu/contextmenu-template
+type: text/vnd.tiddlywiki
+
+\whitespace trim
+
+\define menu-item(title,subtitle:"",actions:"",tooltip:"")
+		<$button class="tc-menu-list-item tc-btn-invisible" actions=<<__actions__>> tooltip="$tooltip$" >
+			<span class="sq-contextmenu-itemwrapper">
+				<span class="sq-contextmenu-itemtext">$title$</span>
+				<span class="sq-contextmenu-itemicon"><$macrocall $name="displayshortcuts" $output="text/plain" shortcuts="$subtitle$" prefix="" separator=" " suffix=""/></span>
+			</span>
+		</$button>
+\end
+
+\define menu-divider() <div class="sq-contextmenu-divider"/>
+
+\define set-mode-actions(mode) <$action-setfield $tiddler=<<contextmenu-state>> mode="$mode$"/>
+\define reset-mode-actions() <$action-setfield $tiddler=<<contextmenu-state>> mode=""/>
+
+\define copy-structure-actions()
+<$action-streams-copy-structure node=<<currentTiddler>> state="$:/state/rimir/streams-extras/clipboard/structure"/>
+\end
+
+\define copy-list-actions(format)
+<$action-streams-copy-list node=<<currentTiddler>> format="$format$"/>
+\end
+
+\define paste-structure-actions()
+<$action-streams-paste-structure node=<<currentTiddler>> state="$:/state/rimir/streams-extras/clipboard/structure"/>
+\end
+
+\define paste-list-actions()
+<$action-streams-paste-list node=<<currentTiddler>>/>
+\end
+
+<$reveal type="popup" state=<<contextmenu-state>> position={{{[<contextmenu-state>get[position]]}}} tag="div">
+<div class={{{tc-drop-down sq-contextmenu [<contextmenu-state>get[position]match[right]then[sq-contextmenu-alignright]else[]] +[join[ ]]}}}>
+<$let menuMode={{{ [<contextmenu-state>get[mode]] }}}>
+
+<%if [<menuMode>match[copy]] %>
+<!-- Copy sub-menu — « Back stays open (wrapped in tc-popup-keep);
+     leaf items close the popup after firing their action. -->
+<div class="tc-popup-keep">
+<$macrocall $name="menu-item" title="« Back" actions=<<reset-mode-actions>>
+		tooltip="Return to the main contextmenu"/>
+</div>
+<<menu-divider>>
+<$macrocall $name="menu-item" title="Structure" actions=<<copy-structure-actions>>
+		tooltip="Remember this node + its subtree (titles, text, hierarchy) in a wiki state tiddler so Paste › Structure can recreate it elsewhere"/>
+<$macrocall $name="menu-item" title="TW-List" actions="""<$macrocall $name=copy-list-actions format=tw/>"""
+		tooltip="Copy this node + subtree to clipboard as a TiddlyWiki outline (* nodes, ** children, *** grandchildren …)"/>
+<$macrocall $name="menu-item" title="MD-List" actions="""<$macrocall $name=copy-list-actions format=md/>"""
+		tooltip="Copy this node + subtree to clipboard as a Markdown indented list (-, two-space indent per level)"/>
+<$macrocall $name="menu-item" title="HTML-List" actions="""<$macrocall $name=copy-list-actions format=html/>"""
+		tooltip="Copy this node + subtree to clipboard as nested HTML &lt;ul&gt;&lt;li&gt;&lt;/li&gt;&lt;/ul&gt;"/>
+
+<%elseif [<menuMode>match[paste]] %>
+<div class="tc-popup-keep">
+<$macrocall $name="menu-item" title="« Back" actions=<<reset-mode-actions>>
+		tooltip="Return to the main contextmenu"/>
+</div>
+<<menu-divider>>
+<!-- Structure: enabled only when the clipboard state tiddler has content. -->
+<$list filter="[[$:/state/rimir/streams-extras/clipboard/structure]get[text]!is[blank]]" variable="_NULL"
+		emptyMessage="""<div class="tc-menu-list-item rr-streams-disabled" title="Nothing has been copied yet — use Copy › Structure on a node first">Structure</div>""">
+<$macrocall $name="menu-item" title="Structure" actions=<<paste-structure-actions>>
+		tooltip="Recreate the remembered subtree as a new child of this node. New tiddlers are always created (never shared); each new node stamps its source title onto an `orig-tiddler` field"/>
+</$list>
+<$macrocall $name="menu-item" title="Text-List" actions=<<paste-list-actions>>
+		tooltip="Read clipboard text; auto-detect TiddlyWiki/Markdown/HTML outline; create matching child stream-nodes under this node. Clipboard text has no source tiddler so `orig-tiddler` is not set on these nodes"/>
+
+<%else%>
+<!-- Default menu: stock streams items + custom contributions + our cascade
+     entries (wrapped in tc-popup-keep so the click doesn't dismiss). -->
+<$macrocall $name="menu-item" title="Open" actions="""<$action-navigate/>"""
+		tooltip="Open this node as a regular tiddler"/>
+<$macrocall $name="menu-item" title="Rename" subtitle="((streams-rename))" actions=<<rename-node-actions>>
+		tooltip="Rename this stream node"/>
+<$macrocall $name="menu-item" title="Delete" subtitle="((streams-delete))" actions=<<delete-node-actions>>
+		tooltip="Delete this stream node"/>
+<$list filter="[all[shadows+tiddlers]tag[$:/tags/streams/contextmenu]]" variable="listItem">
+<$macrocall $name="menu-item"
+		title={{{[<listItem>get[sq-contextmenu-name]]}}}
+		subtitle={{{[<listItem>get[key]] [<listItem>get[sq-contextmenu-subtitle]] +[first[]]}}}
+		actions={{{[<listItem>get[text]]}}}
+		tooltip={{{[<listItem>get[sq-contextmenu-tooltip]] [<listItem>get[description]] +[first[]]}}} />
+</$list>
+<<menu-divider>>
+<div class="tc-popup-keep">
+<$macrocall $name="menu-item" title="Copy ▸" actions="""<$macrocall $name=set-mode-actions mode=copy/>"""
+		tooltip="Copy this node — opens a submenu with Structure (round-trips through a TW state tiddler) and three text formats (TW/MD/HTML) that go through the system clipboard"/>
+<$macrocall $name="menu-item" title="Paste ▸" actions="""<$macrocall $name=set-mode-actions mode=paste/>"""
+		tooltip="Paste under this node — Structure pulls from the TW state tiddler, Text-List reads + parses the system clipboard"/>
+</div>
+<<menu-divider>>
+<$macrocall $name="menu-item" title="Keyboard Shortcuts (?)" actions="""<$action-navigate $to="$:/plugins/sq/streams/info/keyboard-shortcuts"/>"""
+		tooltip="Open the streams plugin's keyboard shortcuts reference"/>
+<%endif%>
+
+</$let>
+</div>
+</$reveal>
