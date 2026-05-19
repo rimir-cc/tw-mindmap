@@ -3,16 +3,14 @@
     "description": "Engine-agnostic mindmap rendering for TiddlyWiki with a base + overlay data model",
     "name": "mindmap",
     "author": "rimir",
-    "version": "0.2.32",
+    "version": "0.2.33",
     "core-version": ">=5.3.0",
     "plugin-type": "plugin",
-    "plugin-priority": 2,
     "dependents": [],
     "soft-dependents": [
         "$:/plugins/rimir/doc-template",
         "$:/plugins/rimir/theme",
-        "$:/plugins/rimir/present",
-        "$:/plugins/sq/streams"
+        "$:/plugins/rimir/present"
     ],
     "list": "readme documentation settings views producers flags changelog license"
 }
