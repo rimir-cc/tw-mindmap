@@ -817,17 +817,14 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
         "</$keyboard>" +
         "</$keyboard>" +
         "<%else%>" +
-        // Shadow `editState` to empty for the body-view branch so the
-        // rimir/theme `rr-text-editor-leave-edit` EditorToolbar item's
-        // condition `[<editState>!is[blank]]` fails inside any nested
-        // editor (notably sq/streams' row-edit textarea). Otherwise that
-        // toolbar item registers a `data-tw-keyboard-shortcut="ctrl+Enter"`
-        // which the framed-engine binds via preventDefault + stopPropagation
-        // before streams' own `<$keyboard-plus>` save-and-exit handler can
-        // fire — symptom: ctrl-Enter in a streams row-edit does nothing.
-        // Same race would hit any other ctrl+Enter-bound EditorToolbar item
-        // that uses `<editState>` as a gate.
-        "<$let editState=\"\">" +
+        // Keep `editState` pointing at the real state tiddler here so the
+        // rimir/theme `rr-text-view-editable` template's dblclick action
+        // `<$action-setfield $tiddler=<<editState>> text="yes"/>` flips the
+        // preview into edit mode. The nested-editor safety blanking that
+        // used to live here (for sq/streams row-edit's ctrl+Enter race
+        // against rr-text-editor-leave-edit's EditorToolbar shortcut) is
+        // now scoped to the streams branch inside default-preview-body
+        // — see that template for the localised `<$let editState="">`.
         "<%if [<__bodytemplate__>!is[blank]] %>" +
         "<$transclude $tiddler=<<__bodytemplate__>> $mode='block'/>" +
         "<%else%>" +
@@ -862,7 +859,6 @@ MindmapWidget.prototype.renderPreviewChildren = function () {
         "</div>" +
         "</$list>" +
         "<%endif%>" +
-        "</$let>" +
         "<%endif%>" +
         "</div>" +
         "</$let>" +

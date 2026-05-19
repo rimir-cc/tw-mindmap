@@ -31,9 +31,19 @@ type: text/vnd.tiddlywiki
 
 <$let noteType={{{ [<previewTitle>get[note-type]] }}}>
 <%if [<noteType>match[streams]] %>
+<!-- Blank `editState` inside the streams branch so the rimir/theme
+     `rr-text-editor-leave-edit` EditorToolbar item's gate `[<editState>!is[blank]]`
+     fails inside streams' row-edit textarea. Otherwise that toolbar item
+     registers `data-tw-keyboard-shortcut="ctrl+Enter"`, which the framed-engine
+     binds via preventDefault + stopPropagation before streams' own
+     `<$keyboard-plus>` save-and-exit handler can fire — symptom: ctrl-Enter
+     in a streams row-edit does nothing. The text branches below keep the
+     real editState so rr-text-view-editable's dblclick-to-edit works. -->
+<$let editState="">
 <$tiddler tiddler=<<previewTitle>>>
 <$transclude $tiddler="$:/plugins/sq/streams/nodes-list-template" $mode="block"/>
 </$tiddler>
+</$let>
 <%else%>
 <$let viewTiddler=<<previewTitle>>>
 <$transclude $tiddler="$:/plugins/rimir/theme/rr-text-view-editable" $mode="block"/>
